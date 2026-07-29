@@ -20,8 +20,25 @@
     "enabled": true
   },
 
+  /**
+   * Service binding para a app — o agendador NÃO chama a app por HTTP público.
+   *
+   * Antes ele montava `${SITE_URL}/api/cron/...` e usava o `fetch` global. Como
+   * `SITE_URL` apontava para o domínio recém-comprado, que ainda não resolvia,
+   * TODO disparo morria no DNS: o cron rodava, o fetch estourava e nada chegava
+   * na app — nenhuma linha em `ingestion_runs`, nenhuma notícia publicada.
+   * Falha invisível justamente por não haver a quem reportar.
+   *
+   * Com o binding, a chamada vai pela rede interna da Cloudflare: sem DNS, sem
+   * TLS, sem sair para a internet. A ingestão deixa de depender do estado do
+   * domínio — que é exatamente a classe de acoplamento que causou a pane.
+   */
+  "services": [{ "binding": "APP", "service": "minuto-catolico" }],
+
   "vars": {
-    // Em produção, apontar para o domínio real da app.
+    // Apenas base para montar a URL e deixar o log legível. Com o service
+    // binding acima, o HOST é irrelevante para o roteamento — só o path importa.
+    // Não voltar a usar isto com o `fetch` global.
     "SITE_URL": "https://minutocatolico.com.br"
   }
 

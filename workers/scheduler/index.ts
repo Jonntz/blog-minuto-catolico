@@ -14,9 +14,18 @@
  */
 
 interface SchedulerEnv {
-  /** URL pública da app Next.js, sem barra final. */
+  /**
+   * Service binding para o Worker da app (`minuto-catolico`).
+   *
+   * É por AQUI que as rotas de cron são chamadas — nunca pelo `fetch` global.
+   * Ver a justificativa longa em `wrangler.jsonc`: usar HTTP público acoplava a
+   * ingestão ao estado do DNS, e uma troca de domínio derrubou o pipeline
+   * inteiro sem deixar rastro.
+   */
+  APP: Fetcher;
+  /** Só monta a URL para o log. O roteamento é do binding, não do host. */
   SITE_URL: string;
-  /** Compartilhado com a app; validado em proxy.ts antes de chegar na rota. */
+  /** Compartilhado com a app; conferido por `exigirCronSecret()` na rota. */
   CRON_SECRET: string;
 }
 
@@ -75,7 +84,8 @@ async function dispararRota(
   const url = `${env.SITE_URL.replace(/\/+$/, "")}${rota}`;
 
   try {
-    const resposta = await fetch(url, {
+    // `env.APP.fetch`, não o `fetch` global: entrega direta ao Worker da app.
+    const resposta = await env.APP.fetch(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${env.CRON_SECRET}`,

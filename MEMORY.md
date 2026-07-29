@@ -577,6 +577,45 @@ projetado diante de uma falha de infraestrutura de terceiro.
 **Ainda NÃO medido:** a vazão real com os modelos assimétricos
 (`llama70b` adapta / `mistral24b` verifica). Depende da cota liberar.
 
+### 🔴🔴 O CRON NUNCA DISPAROU — causa raiz achada em 29/07 (03:50 UTC)
+
+Sintoma: nenhuma notícia no site, 75 artigos parados em `draft`, e a tabela
+`ingestion_runs` com **8 linhas no total** — todas de disparo manual meu. Zero
+execuções automáticas desde o deploy do agendador (28/07 21:30 UTC).
+
+**Causa:** `workers/scheduler/index.ts` montava `${SITE_URL}/api/cron/...` e
+chamava com o `fetch` global. Eu havia configurado `SITE_URL` como
+`https://minutocatolico.com.br` — o domínio recém-comprado, que **ainda não
+resolve** (sem registro `A`, delegação ainda em `auto.dns.br`). Todo disparo
+morria no DNS: o cron rodava, o `fetch` estourava, e a requisição nunca chegava
+na app. Nenhuma linha em `ingestion_runs` porque **não havia a quem reportar**.
+
+Erro meu: apontei a configuração de produção para um domínio que não existia.
+
+**A cota da Cloudflare mascarou isto.** Como os testes manuais batiam no 4006,
+atribuí o site vazio à cota e não questionei por que não havia execução
+automática nenhuma. A pista estava à vista: o 4006 explica `publicados=0`, mas
+**não explica `ingestion_runs` vazia** — ingestão não gasta Neuron.
+
+**Conserto (mais forte que só arrumar a URL):** service binding.
+```jsonc
+// workers/scheduler/wrangler.jsonc
+"services": [{ "binding": "APP", "service": "minuto-catolico" }]
+```
+```ts
+const resposta = await env.APP.fetch(url, { method: "POST", ... });
+```
+A chamada vai pela rede interna da Cloudflare: sem DNS, sem TLS, sem sair para a
+internet. **A ingestão deixa de depender do estado do domínio** — que era a
+classe de acoplamento que causou a pane. `SITE_URL` continua no agendador só
+para o log ficar legível; com o binding o host é irrelevante para o roteamento.
+
+**Não regredir:** nunca voltar a usar o `fetch` global no agendador.
+
+**Lição de diagnóstico:** health-check `estado: "parado"` com
+`segundosDesdeUltima: 6110` era o sinal, e estava correto desde sempre. Faltou
+eu olhar para ele em vez de para a cota.
+
 ### Correção de afirmação anterior
 
 Eu havia dito que a rota de ingestão precisava invalidar cache. **Errado.** Ela
@@ -678,6 +717,16 @@ ambos corrigiram erros reais e distintos. O que falta é só a query acima.
 ---
 
 ## 6. Próximo passo exato
+
+> **ATUAL (29/07, 04:00 UTC)** — Fases 0–2 entregues e em produção. Aberto:
+> 1. Confirmar que o cron dispara sozinho após o service binding (verificação
+>    rodando; esperar linha nova em `ingestion_runs` sem disparo manual).
+> 2. Medir vazão real dos modelos assimétricos — depende da cota liberar.
+> 3. Ligar o Custom Domain quando o `.br` publicar a delegação para a Cloudflare
+>    (DNSSEC já removido; NS da Cloudflare já respondem `aa`).
+> 4. Trocar os placeholders `public/logo.png` e `public/og-default.png`.
+>
+> O histórico abaixo é da Fase 0 e ficou por registro.
 
 Fase 0 concluída. Abrir a **Fase 1** com quatro frentes paralelas, todas
 contra o schema já congelado em `src/db/schema.ts`:

@@ -14,7 +14,8 @@ import { requeueTransitorios } from "@/services/translation/requeue";
  * motivos diferentes (rede da fonte × quota de IA), e juntar as duas faria uma
  * derrubar a outra. O agendador chama as duas.
  *
- * Autorização já foi verificada em `src/proxy.ts` — não reautenticar aqui.
+ * Autenticação: `exigirCronSecret()` na primeira linha. Já foi no `proxy.ts`,
+ * removido porque o OpenNext não suporta middleware Node — ver `src/lib/cron-auth.ts`.
  */
 export async function POST(request: Request): Promise<NextResponse> {
   const negado = await exigirCronSecret(request);
