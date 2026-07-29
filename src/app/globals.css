@@ -1,0 +1,220 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   Tokens do design — portados 1:1 de "Blog Notícias Católicas.dc.html".
+   Os valores oklch são os do design original; não ajustar sem revisitar o
+   arquivo de origem no Claude Design.
+
+   Por que os valores ficam em :root (e não dentro de @theme): o tema troca em
+   runtime via [data-theme] no <html>. Com @theme inline abaixo, as utilities do
+   Tailwind referenciam a var por nome em vez de assar o valor no build — então
+   `bg-surface` e `text-ink` seguem o tema sem classe `dark:` em todo lugar.
+   ========================================================================== */
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root {
+  --bg: oklch(0.985 0.003 95);
+  --surface: oklch(1 0 0);
+  --surface-2: oklch(0.968 0.004 95);
+  --line: oklch(0.905 0.004 95);
+  --ink: oklch(0.2 0.006 265);
+  --ink-2: oklch(0.44 0.006 265);
+  --ink-3: oklch(0.6 0.006 265);
+  --nav: oklch(0.985 0.003 95 / 0.72);
+  /* Placeholder de imagem (a hachura diagonal do design). */
+  --ph: oklch(0.955 0.005 95);
+  --ph-line: oklch(0.9 0.007 95);
+  --shadow: 0 1px 2px oklch(0.2 0.01 265 / 0.05),
+    0 14px 34px oklch(0.2 0.01 265 / 0.07);
+
+  /* Pares de tag: -f = foreground, -b = background */
+  --blue-f: oklch(0.5 0.15 255);
+  --blue-b: oklch(0.95 0.035 255);
+  --green-f: oklch(0.46 0.12 155);
+  --green-b: oklch(0.95 0.04 155);
+  --amber-f: oklch(0.5 0.12 78);
+  --amber-b: oklch(0.95 0.06 85);
+  --red-f: oklch(0.52 0.17 25);
+  --red-b: oklch(0.955 0.035 25);
+  --neut-f: oklch(0.44 0.006 265);
+  --neut-b: oklch(0.94 0.004 95);
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: oklch(0.155 0.005 265);
+  --surface: oklch(0.197 0.006 265);
+  --surface-2: oklch(0.228 0.006 265);
+  --line: oklch(0.295 0.008 265);
+  --ink: oklch(0.965 0.003 95);
+  --ink-2: oklch(0.78 0.005 95);
+  --ink-3: oklch(0.635 0.006 95);
+  --nav: oklch(0.155 0.005 265 / 0.7);
+  --ph: oklch(0.225 0.006 265);
+  --ph-line: oklch(0.29 0.009 265);
+  --shadow: 0 1px 2px oklch(0 0 0 / 0.3), 0 16px 38px oklch(0 0 0 / 0.34);
+
+  --blue-f: oklch(0.84 0.1 255);
+  --blue-b: oklch(0.32 0.055 255);
+  --green-f: oklch(0.84 0.1 155);
+  --green-b: oklch(0.3 0.05 155);
+  --amber-f: oklch(0.86 0.1 85);
+  --amber-b: oklch(0.31 0.05 80);
+  --red-f: oklch(0.83 0.1 25);
+  --red-b: oklch(0.32 0.055 25);
+  --neut-f: oklch(0.8 0.005 95);
+  --neut-b: oklch(0.27 0.006 265);
+
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-nav: var(--nav);
+  --color-ph: var(--ph);
+  --color-ph-line: var(--ph-line);
+
+  --color-blue-f: var(--blue-f);
+  --color-blue-b: var(--blue-b);
+  --color-green-f: var(--green-f);
+  --color-green-b: var(--green-b);
+  --color-amber-f: var(--amber-f);
+  --color-amber-b: var(--amber-b);
+  --color-red-f: var(--red-f);
+  --color-red-b: var(--red-b);
+  --color-neut-f: var(--neut-f);
+  --color-neut-b: var(--neut-b);
+
+  --shadow-card: var(--shadow);
+
+  /* --font-display é trocável em runtime (prop headlineFont do design:
+     sans | serif). Por isso var() encadeada em vez de valor fixo. */
+  --font-display: var(--font-display-active, var(--font-instrument-sans));
+  --font-sans: var(--font-instrument-sans);
+  --font-serif: var(--font-newsreader);
+
+  /* Easing usada em todo o design. */
+  --ease-dc: cubic-bezier(0.16, 0.84, 0.44, 1);
+}
+
+/* ==========================================================================
+   Base
+   ========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  /* Compensa o header fixo de 54px + a barra de progresso. */
+  scroll-padding-top: 74px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-instrument-sans), system-ui, -apple-system,
+    "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  text-wrap: pretty;
+}
+
+a {
+  color: var(--ink);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+a:hover {
+  color: var(--blue-f);
+}
+
+::selection {
+  background: var(--blue-b);
+  color: var(--blue-f);
+}
+
+input,
+button,
+textarea {
+  font-family: inherit;
+}
+
+/* Carrosséis horizontais sem barra de rolagem visível. */
+[data-hscroll] {
+  scrollbar-width: none;
+}
+
+[data-hscroll]::-webkit-scrollbar {
+  display: none;
+}
+
+/* Foco visível — o design original não define nenhum, o que deixa navegação
+   por teclado sem indicação. Correção de acessibilidade. */
+:focus-visible {
+  outline: 2px solid var(--blue-f);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ==========================================================================
+   Movimento
+   ========================================================================== */
+
+@keyframes bnIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* A transição global de cor do design (`body *`) é o que faz a troca de tema
+   parecer suave. Mantida, mas restrita às propriedades de cor — aplicar em
+   `all` causaria repaints caros e prejudicaria o INP. */
+body * {
+  transition:
+    background-color 0.35s ease,
+    color 0.35s ease,
+    border-color 0.35s ease;
+}
+
+/* O design anima sem checar preferência de movimento reduzido. Corrigido:
+   quem pediu menos movimento recebe o conteúdo já visível, não animado. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after,
+  body * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  [data-reveal] {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

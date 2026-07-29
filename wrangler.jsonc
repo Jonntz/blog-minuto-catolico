@@ -1,0 +1,73 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "minuto-catolico",
+	"main": ".open-next/worker.js",
+	"compatibility_date": "2026-07-27",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS"
+	},
+	// NOTA: não há "triggers.crons" aqui de propósito.
+	// O worker gerado pelo OpenNext exporta apenas `fetch` — não tem handler
+	// `scheduled`, então um Cron Trigger apontado para cá dispararia no vazio.
+	// O agendamento vive em workers/scheduler/, que chama /api/cron/* por HTTP
+	// com o CRON_SECRET. Ver MEMORY.md §2.7.
+	//
+	// UM banco, UM binding (`DB`). Havia aqui uma segunda entrada duplicada
+	// (binding `minuto_eclesiastico`, `remote: true`) apontando para o mesmo
+	// database_id — removida: `remote: true` força ida à rede mesmo em
+	// desenvolvimento local, e dois bindings para o mesmo banco só criam
+	// ambiguidade sobre qual o código usa.
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "minuto-eclesiastico",
+			"database_id": "be66eecd-f2e1-48ac-9f47-19b0b0f6acb4",
+			"migrations_dir": "drizzle/migrations"
+		}
+	],
+	// R2 (binding MEDIA) REMOVIDO por ora.
+	//
+	// Motivo: nada no código usa `env.MEDIA`, o OpenNext roda com cache padrão
+	// (não em R2), e as imagens são servidas direto dos CDNs das fontes via
+	// `next/image` (ver `remotePatterns` em next.config.ts). Manter o binding
+	// obrigaria a ativar o R2 no painel — que pede método de pagamento mesmo no
+	// tier gratuito — para um recurso que ninguém chama.
+	//
+	// Quando reativar: no momento em que passarmos a re-hospedar as imagens em
+	// vez de apontar para o CDN de terceiro. É desejável (o CLAUDE.md §2 prevê
+	// R2, e hoje consumimos a banda do Cloudinary do EWTN), mas é trabalho novo,
+	// não pré-requisito para publicar.
+	//
+	// "r2_buckets": [
+	//   { "binding": "MEDIA", "bucket_name": "minuto-eclesiastico-media" }
+	// ],
+	//
+	// Workers AI — provider de adaptação PT-BR (gratuito: 10k Neurons/dia).
+	// Ver MEMORY.md §2.6 para o trade-off de qualidade assumido.
+	"ai": {
+		"binding": "AI"
+	},
+	"observability": {
+		"enabled": true
+	},
+	"vars": {
+		"SITE_URL": "https://minutocatolico.com.br",
+		"SOURCE_SOTC_ENABLED": "true",
+		// Provider de adaptação: "workersAi" (gratuito) ou "anthropic" (stub).
+		"TRANSLATION_PROVIDER": "workersAi",
+		// Modelos: apelido de MODELOS_AVALIADOS ou id completo "@cf/...".
+		// A verificação roda num modelo menor de propósito — cada artigo custa
+		// duas chamadas contra 10.000 Neurons/dia, e comparar dois textos é
+		// tarefa mais simples que reescrever um. Ver getModeloVerificacao().
+		"WORKERS_AI_MODEL": "llama70b",
+		"WORKERS_AI_VERIFY_MODEL": "mistral24b"
+	}
+	// Segredos (NUNCA em vars):
+	//   wrangler secret put CRON_SECRET
+	// Em desenvolvimento, use .dev.vars (git-ignorado).
+}

@@ -1,0 +1,30 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "minuto-catolico-scheduler",
+  "main": "index.ts",
+  "compatibility_date": "2026-07-27",
+
+  // Cron Triggers do Cloudflare — gratuitos e com cadência flexível.
+  // Cada expressão precisa ter rota correspondente no mapa ROTAS de index.ts,
+  // senão o disparo loga "cron_sem_rota" e não faz nada.
+  "triggers": {
+    "crons": [
+      "*/15 * * * *",
+      "5,20,35,50 * * * *",
+      "0 7 1 * *",
+      "0 7 10 1 *"
+    ]
+  },
+
+  "observability": {
+    "enabled": true
+  },
+
+  "vars": {
+    // Em produção, apontar para o domínio real da app.
+    "SITE_URL": "https://minutocatolico.com.br"
+  }
+
+  // Segredo (NUNCA em vars) — precisa ser o MESMO valor da app:
+  //   wrangler secret put CRON_SECRET --config workers/scheduler/wrangler.jsonc
+}

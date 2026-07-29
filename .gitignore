@@ -1,0 +1,37 @@
+# dependências
+/node_modules
+/.pnp
+.pnp.*
+
+# build
+/.next/
+/out/
+/build
+/.open-next/
+
+# cloudflare
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+# cloudflare-env.d.ts NÃO é ignorado de propósito: é gerado por `wrangler types`
+# mas é necessário para o `tsc --noEmit` passar em CI e em máquina nova.
+# Regerar com `npm run cf:typegen` sempre que wrangler.jsonc mudar.
+
+# ambiente
+.env
+.env*.local
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# sistema
+.DS_Store
+*.pem

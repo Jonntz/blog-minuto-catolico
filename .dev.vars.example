@@ -1,0 +1,8 @@
+# Copie para .dev.vars e preencha. NUNCA commitar .dev.vars.
+#
+# Gere um valor forte com:
+#   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+#
+# O MESMO valor precisa estar no worker agendador:
+#   wrangler secret put CRON_SECRET --config workers/scheduler/wrangler.jsonc
+CRON_SECRET=""

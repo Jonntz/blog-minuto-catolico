@@ -1,0 +1,694 @@
+# MEMORY.md — Minuto Eclesiástico
+
+> Estado vivo do projeto. Atualizado ao fim de **cada tarefa concluída**.
+> Se o contexto acabar no meio de algo, o "Próximo passo exato" no fim deste
+> arquivo é onde retomar.
+
+**Última atualização:** 2026-07-27
+
+---
+
+## 1. Tarefas
+
+| # | Tarefa | Status |
+|---|---|---|
+| 0.0 | Investigação de fontes (RSS, robots.txt, calendário litúrgico) | `done` |
+| 0.1 | Plano escrito e aprovado pelo usuário | `done` |
+| 0.2 | `MEMORY.md` inicial | `done` |
+| 0.3 | Scaffold Next.js 16.2 (App Router, TS 5.x, Tailwind 4, `src/`) | `done` |
+| 0.4 | `next.config.ts` (`cacheComponents`) + OpenNext/Wrangler (D1, R2, AI) | `done` |
+| 0.5 | Schema Drizzle + primeira migration | `done` |
+| 0.6 | `src/lib/env.ts` (zod) + `proxy.ts` (CRON_SECRET) | `done` |
+| 0.7 | Tokens `oklch` do design → `globals.css` (`@theme`) | `done` |
+| 1.A | Design importado → React/Next (dados mockados) | `done` (com débito de fidelidade — ver §2e) |
+| 1.B | Ingestão + dedupe + `robots.txt` + logging | `pending` |
+| 1.C | Adaptação PT-BR + glossário católico + guard-rails | `done` |
+| 1.D | SEO (metadata, JSON-LD, sitemaps, feed) + parser do calendário 1962 | `done` |
+| 2.0 | Integração: design + D1 real + SEO, cache tags, health-check | `pending` |
+
+---
+
+## 2. Decisões e por quê
+
+### 2.1 Identidade
+- **Nome = "Minuto Eclesiástico"** (com acento). Confirmado pelo próprio arquivo de
+  design: aparece no header, no masthead `<h1>`, no footer e no `© 2026`. O projeto
+  no Claude Design se chama "Boa Nova", mas isso é só o nome do arquivo lá — não é
+  branding. Propagar para domínio, JSON-LD `publisher`, OG e README.
+
+### 2.2 Fontes de conteúdo (verificado ao vivo em 2026-07-27)
+
+| Fonte | Feed | O que traz | O que falta |
+|---|---|---|---|
+| **EWTN News** | `https://www.ewtnnews.com/rss` | RSS 2.0, 50 itens, `content:encoded` (texto integral), `media:content` (imagem + `media:credit` + `media:description`), `dc:creator`, `category` (`World`/`Vatican`), `pubDate`, `guid` permalink | — |
+| **Sign of the Cross** | `https://www.signofthecrossmedia.com/feed/` | WordPress 6.9.5, 25 itens, `description` (excerpt 146–645 chars), `category`, `pubDate` | **Sem `content:encoded` e sem imagem.** WP REST API dá 401. Imagem/contexto exigem ler `og:image` / `og:description` da página do artigo |
+
+- O EWTN **não** expõe `<link rel="alternate">` na home (é SPA) — o feed só foi
+  encontrado sondando paths. Registrar para quem for revisitar: não adianta procurar
+  no HTML.
+- O EWTN declara `<ttl>15</ttl>`. **É a própria fonte sugerindo polling de 15 min** —
+  usamos isso como justificativa da cadência escolhida.
+
+### 2.3 `robots.txt` — risco aceito conscientemente
+
+| Fonte | `User-agent: *` | Bloqueia por nome | Content-Signal |
+|---|---|---|---|
+| Sign of the Cross | só `/wp-admin/` | `ClaudeBot`, `Claude-Web`, `anthropic-ai`, `GPTBot`, `CCBot`, `Google-Extended`, `PerplexityBot`, `ChatGPT-User` | — |
+| EWTN News | `Allow: /` | `ClaudeBot`, `GPTBot`, `CCBot`, `Google-Extended`, `Amazonbot` | `search=yes, ai-train=no, use=reference` |
+| Salve Maria | `Disallow:` (vazio = libera tudo) | nenhum | — |
+
+- **EWTN:** `use=reference` concede explicitamente o nosso caso de uso. Não treinamos
+  modelo, então `ai-train=no` não nos atinge. Base sólida.
+- **Sign of the Cross:** bloqueia crawlers de IA nominalmente, sem emitir content
+  signal. Nosso bot não é nenhum dos bloqueados e a regra `*` nos permite — mas a
+  **intenção declarada é contrária**. O usuário optou por prosseguir com UA próprio.
+  → **Risco reputacional aceito conscientemente.** Mitigação: a fonte fica atrás da
+  flag `SOURCE_SOTC_ENABLED`, desligável em um commit.
+- UA a usar: `MinutoEclesiasticoBot/1.0 (+https://<domínio>/bot)`.
+
+### 2.4 Formato do conteúdo publicado
+**Matéria adaptada, ~40–50% do original.** 3–5 parágrafos originais em PT-BR,
+reescritos — não traduzidos literalmente. Nunca texto integral (`CLAUDE.md` §6).
+Bloco "Fonte: X" + link canônico obrigatórios. Protege de direito autoral e de
+penalização por conteúdo duplicado.
+
+### 2.5 Liturgia — calendário tradicional de 1962
+- **Decisão do usuário:** calendário e santoral segundo o **missal de 1962** (missa
+  tridentina), não o Novus Ordo.
+- **Fonte escolhida:** `https://salvemaria.com.br/calendario/` — página WordPress
+  server-rendered com **tabelas HTML estáticas**, uma por mês, em PT-BR, com:
+  data + dia da semana · festa + comemoração + classe · santo congregado mariano ·
+  cor · Glória/Credo · prefácio · **Epístola • Evangelho**.
+  URLs anuais estáveis: `/calendario/`, `/calendario-2025`, `/calendario-2024`, `/calendario-2023`.
+- **Estratégia:** raspar **1× por ano** (não por requisição) → ~365 linhas em D1.
+  Zero dependência em runtime; se a página cair, a home não cai junto.
+- **Descartado: API do Missale Meum.** Testei 7 variações de path
+  (`/api/v5/en/calendar`, `/api/v5/en/date/…`, `/api/v6/…`, etc.) — **todas 404**.
+  A API pública parece ter saído do ar. Não perder tempo tentando de novo.
+
+### 2.6 Modelo de linguagem — gratuito
+- **Não existe modelo gratuito na API da Anthropic.** O usuário pediu gratuito.
+- **Escolha: Cloudflare Workers AI** (binding `env.AI`). Coerente porque o alvo de
+  deploy já é Cloudflare Workers: sem API key, sem egress, sem cartão.
+  10.000 Neurons/dia grátis, reset 00:00 UTC, depois US$0,011/1k.
+- **Trade-off registrado:** um modelo aberto classe 8B adaptando notícia doutrinária
+  EN→PT-BR erra terminologia e inventa detalhe bem mais que um modelo de fronteira.
+  Glossário + guard-rails reduzem, não eliminam. O `CLAUDE.md` §1 exige precisão
+  factual como requisito de produto — **essa tensão é real e está sendo assumida
+  com os olhos abertos.**
+- **Mitigação de engenharia:** camada atrás da interface `TranslationProvider`, com
+  `workersAi` (padrão) e `anthropic` (stub desativado). Trocar = mudar env var.
+- **Postura de falha:** quota do dia esgotada ⇒ item vira `draft`, **nunca** publica
+  sem adaptação; o cron seguinte reprocessa a fila.
+
+### 2.7 Automação — polling, não tempo real
+Cron Triggers do Cloudflare a cada **15 min**, alinhado ao `<ttl>15</ttl>` do EWTN.
+**Não é tempo real** — nenhuma das fontes expõe webhook/WebSub. Trade-off consciente
+entre "quase tempo real" e custo zero.
+
+### 2.8 Skills
+`grill-me` tem `disable-model-invocation: true` e o corpo é só `Run a /grilling
+session.` — é uma entrevista interativa para afiar um plano, **só invocável pelo
+usuário** via slash command. Não se aplica a nenhuma etapa de implementação.
+As outras quatro (`frontend-design`, `web-design-guidelines`,
+`vercel-react-best-practices`, `ui-ux-pro-max`) valem para a Fase 1.A.
+
+---
+
+## 2b. Armadilhas encontradas na Fase 0 (não repetir)
+
+Cada item abaixo custou uma investigação. Estão aqui para não custar de novo.
+
+### `npm audit fix --force` DESTRÓI a stack — nunca rodar
+São 13 vulnerabilidades reportadas, e **todos os 13 "fixes" são downgrades
+semver-major**: `next 16.2.12 → 14.2.35`, `drizzle-kit 0.31.10 → 0.18.1`,
+`@opennextjs/cloudflare 1.20.2 → 1.15.1`. Rebaixar o Next para a 14 destruiria
+Cache Components, `proxy.ts` e a Build Adapters API — a arquitetura inteira que
+o `CLAUDE.md` §2 exige. Todas são dependências de build/dev (postcss, sharp,
+esbuild, glob) que não chegam ao runtime do Worker. **Decisão: conviver.**
+
+### OpenNext não tem handler `scheduled` — por isso o worker agendador separado
+O worker gerado (`node_modules/@opennextjs/cloudflare/dist/cli/templates/worker.js`)
+exporta **apenas `fetch`**. Um Cron Trigger apontado para ele dispararia no vazio,
+silenciosamente — o pior modo de falha possível para ingestão.
+→ Solução: `workers/scheduler/`, Worker próprio com só `scheduled()`, que chama
+`/api/cron/*` por HTTP com o `CRON_SECRET`. Desacoplado, sobrevive a upgrades do
+OpenNext, e é exatamente o desenho do `CLAUDE.md` §4.
+
+### `initOpenNextCloudflareForDev()` quebra o `next build`
+O `next.config.ts` é avaliado também no build, e a chamada abre uma sessão de
+proxy remoto. Pior: `remoteBindings` tem **default `true`**, exigindo
+`CLOUDFLARE_API_TOKEN`. → Guardado por `NODE_ENV === "development"` e com
+`remoteBindings: false`.
+
+### Workers AI não tem inferência local
+O wrangler avisa: *"AI bindings always access remote resources, and so may incur
+usage charges even in local dev"*. Testar a adaptação PT-BR exige conta + token:
+`CLOUDFLARE_API_TOKEN=... CF_REMOTE_BINDINGS=true npm run dev`.
+**Consequência para a Fase 1.C:** não dá para validar a qualidade da tradução
+sem credencial da Cloudflare. Planejar em torno disso.
+
+### `process.env` não carrega os segredos no `proxy.ts`
+Num Worker as vars chegam pelo binding do env. Em `next dev`, `process.env.CRON_SECRET`
+vem `undefined` e o proxy falhava fechado (500 em tudo, inclusive token válido).
+→ `proxy.ts` lê de `getCloudflareContext({async:true})` com `process.env` como reserva.
+Verificado: 401 sem token, 401 com token errado, 404 com token certo (rota ainda não existe).
+
+### `cacheComponents` é top-level no Next 16.2
+`experimental.cacheComponents` está marcado `@deprecated` em
+`node_modules/next/dist/server/config-shared.d.ts:728`. O válido é a chave
+top-level (linha 1210). `cacheLife` também é top-level.
+
+### Versões efetivamente instaladas
+Next 16.2.12 · React 19.2.4 · TypeScript 5.9.3 · Tailwind 4.3.3 ·
+drizzle-orm 0.45.2 · drizzle-kit 0.31.10 · @opennextjs/cloudflare 1.20.2 ·
+wrangler 4.114.0 · zod 4.4.3 · fast-xml-parser 5.10.1 · htmlparser2 12.0.0.
+Node do ambiente: v22.23.1 (requisito do Next 16 é 20.9+).
+
+---
+
+## 2c. Fase 1.C entregue — adaptação e guard-rails
+
+**Modelo escolhido: `@cf/meta/llama-3.1-8b-instruct-fp8`.** Fonte: catálogo público
+da Cloudflare cruzado com `AiModels` do `cloudflare-env.d.ts`. As variantes
+`llama-3-8b-instruct`, `llama-3.1-8b-instruct` e `-awq` estão **DEPRECATED**.
+Escolhida a `-fp8` por estar em `AiModels` (sobrecarga tipada — se a Cloudflare
+remover o modelo, o **build quebra** em vez de o cron descobrir em produção).
+
+> **Discrepância conhecida:** a doc de JSON mode lista `-fast` e
+> `llama-3.1-8b-instruct`, **não** a `-fp8`. Nenhuma opção atende a tudo.
+> O código manda `response_format` mesmo assim e **nunca confia nele**: há um
+> `extrairJson()` que recupera JSON embrulhado em prosa ou cerca de código, e o
+> que não virar objeto válido reprova como `resposta_invalida`.
+
+**9 guard-rails**, todos executados (não param na primeira falha):
+`comprimento` · `proporcao` · `atribuicao` · `numeros` · `verificacao_factual` ·
+`idioma` · `recusa_do_modelo` · `rito_1962` · `glossario`.
+
+Três decisões de projeto que merecem registro:
+- **`numeros` checa a direção INVERSA da ingênua.** Não exige que todo número do
+  original apareça no adaptado — a matéria tem 40–50% do tamanho e descarta
+  detalhe legitimamente. Exige que **nenhum número surja do nada**. Normaliza
+  separadores e numerais por extenso, senão "twelve bishops" → "12 bispos"
+  reprovaria injustamente.
+- **`rito_1962` é condicional, não lista de palavras proibidas.** "salmo
+  responsorial" só reprova se o original **não** trouxer "responsorial psalm".
+  Noticiar celebração no Novus Ordo é reportagem correta; "corrigir" uma Epístola
+  de 1962 para "primeira leitura" é fabricação litúrgica.
+- **`proporcao` mede contra `min(sourceLength, texto disponível)`** porque a
+  ingestão trunca `sourceExcerpt` em 6.000 chars enquanto `sourceLength` guarda o
+  tamanho anterior ao truncamento. Sem o `min`, todo artigo longo reprovaria no piso.
+
+**Testes: 26 asserções, 0 falhas.** Cobrem tradução curta/longa, sem atribuição,
+número inventado, texto que voltou em inglês, recusa do modelo, andaime vazando,
+Novus Ordo indevido, glossário ignorado, e o caso legítimo que NÃO pode reprovar.
+Orquestração testada com provider e banco falsos: cota estourada e queda de rede
+deixam o item em `draft` sem gravar nada.
+
+**NÃO VERIFICADO — a chamada real ao modelo.** Sem `CLOUDFLARE_API_TOKEN` não há
+como saber se o Llama 3.1 8B honra `response_format` nesta variante, qual a taxa
+real de reprovação, nem o consumo de Neurons. A qualidade editorial do texto
+gerado segue sendo incógnita.
+
+Interface para a Fase 2:
+```ts
+import { adaptarPendentes, paraIngestionRun } from "@/services/translation";
+const resumo = await adaptarPendentes(db, env, { limite: 5 });
+const linha  = paraIngestionRun(resumo);
+```
+Não cria rota e não escreve em `ingestion_runs` — quem abre e fecha a execução é a rota.
+
+---
+
+## 2d. Fase 1.D entregue — SEO e calendário de 1962
+
+**Parser validado contra a fonte real:** 2026 → 219 linhas vistas, **212 dias, 0
+rejeitadas, 0 avisos**. 2025 → 365/0/1. 2024 → 366/0/0. Total no D1 local: 577
+linhas, nenhuma com festa vazia, sem epístola ou sem cor.
+
+Nada é lido por posição — cada variação de layout virou uma regra por padrão:
+
+- **A Sexta-feira Santa não tem prefácio** e vem com 3 linhas em vez de 4. Ler a
+  coluna "Liturgia" por índice quebraria justamente no dia mais importante do ano.
+  A classificação é por conteúdo, e a linha de Glória/Credo é testada **antes** da
+  de leituras porque ambas contêm `•`.
+- **Classe é localizada por regex**, não como última linha: `13 de Junho` publica
+  `festa / 2ª classe / (no próprio do Brasil)`. Só conta como classe se a linha
+  for isso e nada mais, senão `Quarta-feira das Têmporas` viraria classe.
+- **Cor validada contra vocabulário**, com tokens separados por `/`, `,` ou ` ou `
+  — pega `Roxo/Branco` (Vigília Pascal) e `Róseo ou Roxo` (Gaudete). Cor
+  desconhecida vira `null` + aviso, nunca lixo.
+- **`weekday` é DERIVADO da data, não copiado da fonte.** A fonte tem erro de
+  digitação real: `Domigo` em 05/10/2025. Confiar no publicado custaria o dia
+  inteiro. O valor publicado vira apenas conferência; divergência gera aviso.
+  ⚠️ **Isto diverge do comentário em `src/db/schema.ts`** ("como publicado pela
+  fonte") — ajustar o comentário na próxima migration.
+- **Falha dura** (`LiturgyParseError`) se: HTML vazio, nenhuma tabela de 4 colunas,
+  nenhum dia reconhecido, rejeição > 10%, ou ano indeterminável. Nunca grava lixo.
+
+**Idempotência comprovada:** 1ª execução `diasNovos:212`; 2ª execução
+`diasNovos:0 / diasAtualizados:212`. O upsert usa
+`coalesce(excluded.x, liturgical_days.x)` nos campos opcionais — recarga
+degradada não apaga dado bom. Lotes de 6 linhas (6×15=90 params; teto do D1 é 100).
+
+**SEO:** sitemap geral, news-sitemap com janela de 48h e teto de 1.000 URLs,
+`robots.ts`, `feed.xml` próprio, JSON-LD `NewsArticle` + `BreadcrumbList` +
+`WebSite` + `NewsMediaOrganization`. Os três XML validados com `xmllint`.
+O JSON-LD escapa `<`/`>`/`&` como `<`/`&` — um `</script>` vindo de
+título de fonte externa não fecha a tag.
+
+**Ajuste já aplicado por mim:** acrescentei o cron `0 7 10 1 *` ao agendador.
+O disparo mensal cai em 1º de janeiro, quando a página do ano novo pode ainda não
+existir — sem a repetição no dia 10, o site ficaria sem liturgia até fevereiro.
+
+---
+
+## 2e. Fase 1.A entregue — DÉBITO DE FIDELIDADE ABERTO
+
+> **A ferramenta `DesignSync` não estava disponível para o subagente.** Ele não
+> conseguiu ler `Blog Notícias Católicas.dc.html` e **reconstruiu a capa por
+> inferência** a partir dos tokens do `globals.css`, do `categories.ts` e do
+> placeholder da Fase 0. O usuário pediu implementação FIEL — o que existe hoje é
+> reconstrução informada. A sessão principal TEM acesso ao `DesignSync`; a
+> conferência é obrigatória na Fase 2.
+
+### Auditado contra o design real — o que FALTA
+
+| # | Seção do design | Situação |
+|---|---|---|
+| F1 | **Campo de busca** no header (desktop, com expansão no focus 124px→196px) e no menu mobile | ausente |
+| F2 | **"Mais lidas da semana"** — `<ol>` de 4 itens numerados na sidebar | ausente |
+| F3 | **Seção Editorial/Opinião** — blockquote serifado grande (`Newsreader` itálico, clamp 24–40px), foto 1:1, "Ler o texto completo", faixa com `bg-surface` e bordas | ausente |
+| F4 | **Seção Newsletter** — "Receba o resumo da manhã", input de e-mail + botão "Assinar", `subscribeNote` | ausente |
+| F5 | **Botões "Compartilhar" / "Salvar"** no cabeçalho da matéria | ausente |
+| F6 | Título da seção de últimas: o design usa **"Últimas notícias"** com contador (`N matérias`) e link **"Limpar filtro"** quando há filtro ativo | virou "Em pauta"/"Editorias" |
+
+### O que SOBRA (invenção que não existe no design)
+
+| # | Item | Evidência |
+|---|---|---|
+| F7 | `src/components/layout/headline-font-toggle.tsx` | No design, `headlineFont` está em `data-props` como `editor:"enum"`, `section:"Aparência"` — é **prop de design-time do painel**, não controle no header. O header do design tem apenas: logo, nav, campo de busca e o toggle de tema. **Remover.** Isso também anula o pedido de anti-FOUC para `bn-headline`. |
+
+### O que a reconstrução acertou (manter)
+
+Estrutura destaque + 2 secundários + sidebar; chips derivados do conteúdo;
+`Epístola`/`Evangelho` sem "Salmo" (verificado: `'Salmo' ausente: True`);
+`brasil` fora da nav/chips e rota devolvendo 404; datas absolutas em vez de
+relativas (relativa envenena cache sob Cache Components); `await connection()`
+antes de `new Date()` — sem ele o build quebra com *"used `new Date()` before
+accessing Request data"*; reveal respeitando `prefers-reduced-motion`;
+acessibilidade acrescentada (skip link, `aria-expanded`/`aria-controls`, Escape,
+devolução de foco, `aria-pressed`, `role="status"`, hierarquia h1→h2→h3).
+
+Decisão de arquitetura que vale manter: **`TopicFilter` recebe os cards já
+renderizados no servidor como `ReactNode`** e filtra via atributo `hidden` —
+`ArticleCard`, `next/image` e `categories.ts` nunca entram no bundle do cliente,
+e o HTML completo continua disponível para rastreadores.
+
+### Verificação real da entrega
+`typecheck` limpo, `build` OK com 34 páginas, `/` → 200 (120.926 bytes),
+`/noticia/<slug>` → 200, `/categoria/liturgia` → 200, `/categoria/brasil` → 404,
+`/noticia/inexistente` → 404. Capa saiu como `◐ Partial Prerender`.
+
+---
+
+## 3. Bloqueios e pendências
+
+| Item | Situação |
+|---|---|
+| Domínio definitivo | **Não definido.** Necessário para o UA do bot, `SITE_URL`, JSON-LD `publisher`, OG e sitemaps. Usando placeholder até o usuário decidir. |
+| Categoria "Igreja no Brasil" | **Ficará vazia** — ambas as fontes são EUA/mundo. Decidir depois: esconder a aba, ou adicionar fonte brasileira. Candidato natural: o próprio Salve Maria (categorias `noticias` e `recortes` em PT-BR, WP REST API **aberta**). Fora do escopo desta entrega. |
+| Orçamento de Neurons | **Não medido.** Bloqueante antes de ligar o cron em produção: processar ~20 artigos reais e ler o consumo no dashboard da Cloudflare. |
+| Conta Cloudflare | ✅ **Criada e autenticada** (28/07/2026). Conta `95fa8e7d…`. |
+| D1 remoto | ✅ **Criado e migrado.** `database_id: be66eecd-f2e1-48ac-9f47-19b0b0f6acb4`. As 4 tabelas existem em produção. |
+| R2 | ❌ **Descartado de propósito.** `wrangler r2 bucket create` falha com *"Please enable R2 through the Cloudflare Dashboard"* (código 10042) — ativar exige método de pagamento mesmo no tier gratuito. Como **nada no código usa `env.MEDIA`** (verificado por grep) e o OpenNext roda com cache padrão, o binding foi removido do `wrangler.jsonc`. Reativar só quando formos re-hospedar imagens em vez de apontar para o CDN das fontes. |
+| Binding D1 duplicado | Corrigido. Algum comando do wrangler acrescentou uma segunda entrada (`binding: "minuto_eclesiastico"`, `remote: true`) para o MESMO `database_id`. Removida: `remote: true` força ida à rede mesmo em dev local, e dois bindings para o mesmo banco criam ambiguidade. **Se reaparecer depois de rodar algum comando do wrangler, remover de novo.** |
+| `CRON_SECRET` em produção | ⏳ Pendente do usuário: `wrangler secret put CRON_SECRET` na app E em `workers/scheduler/`, com o MESMO valor (está em `.dev.vars`). |
+
+### Fila da integração (Fase 2)
+
+| # | Pendência | Origem |
+|---|---|---|
+| I1 | `TRANSLATION_PROVIDER` precisa entrar no `wrangler.jsonc` e no zod de `src/lib/env.ts`. A camada C já lê como opcional com default `workersAi` — nada muda lá quando for adicionado. | 1.C |
+| I2 | **`slug` é derivado do título em INGLÊS** (vem da ingestão, antes da adaptação). Para SEO em PT-BR isso está errado. A coluna é `notNull` com índice único, então mudar exige cuidado com colisão. Decisão de Fase 2. | 1.C |
+| I3 | **`failed_validation` não tem caminho de volta.** Um artigo reprovado por um soluço de parsing fica lá para sempre. Falta um job de requeue (`failed_validation` → `draft`), idealmente só para as causas transitórias. | 1.C |
+| I4 | **Substituir `public/logo.png` e `public/og-default.png`.** São placeholders gerados pelo subagente D só para o `publisher.logo` do JSON-LD e o fallback de OG não darem 404. Manter os mesmos caminhos e proporções (512×512 e 1200×630). | 1.D |
+| I5 | **Queries de `src/lib/seo.ts` precisam de `"use cache"` + `cacheLife` + tags.** Hoje sitemap/feed/news-sitemap usam `connection()` e leem o D1 a cada requisição — desperdício e risco sob tráfego. Promover `listarArtigosPublicados` / `listarArtigosDesde` para a camada de dados compartilhada. | 1.D |
+| I6 | **A página de artigo precisa exibir "Fonte: X" com link para `sourceUrl`.** O JSON-LD já declara `isBasedOn`/`citation`/`creditText`, mas a atribuição VISÍVEL é requisito de produto (`CLAUDE.md` §6). Conferir se a frente A implementou; se não, é obrigatório na Fase 2. | 1.D |
+| I7 | Comentário de `weekday` em `src/db/schema.ts` diz "como publicado pela fonte", mas o parser passou a derivar da data (typo real `Domigo` na fonte). Ajustar na próxima migration. | 1.D |
+| I8 | D1 **local** ficou com 2025 backfillado (365 linhas) além de 2026. Inofensivo; para estado limpo: `DELETE FROM liturgical_days WHERE date LIKE '2025-%'`. | 1.D |
+
+---
+
+## 4. Adaptações do design já identificadas
+
+O mockup foi desenhado com liturgia do **Novus Ordo**; a decisão é **1962**:
+
+1. Card "Liturgia de hoje": `1ª leitura / Salmo / Evangelho` → **`Epístola / Evangelho`**
+   (no missal de 1962 não há salmo responsorial), mais `Classe` e `Cor`. Título vira
+   ex. "VI Domingo depois de Pentecostes · 2ª classe".
+2. Card "Santo do dia": alimentado por `feast` + `marianSaint`.
+3. Data do masthead: dinâmica, `America/Sao_Paulo`.
+4. Chips de tema: derivados das categorias realmente presentes no banco.
+5. Placeholders de imagem hachurados → `next/image`, **mantendo a hachura como
+   fallback real** quando não houver imagem (bonito e evita CLS).
+6. O reveal por `IntersectionObserver` do design **não** checa `prefers-reduced-motion`
+   — corrigir na implementação.
+
+`support.js` é o runtime gerado do Claude Design (`dc-runtime`) — **interpretador,
+não código para portar**. Mapeamento: `sc-if` → render condicional, `sc-for` → `.map()`,
+`style-hover`/`style-focus` → variantes Tailwind, `{{ }}` → props/state,
+`style` inline → Tailwind + tokens `oklch` no `@theme`.
+
+---
+
+## 5. Estado verificado da Fase 0
+
+Comprovado, não presumido:
+
+- `npm run typecheck` → limpo, zero `any`.
+- `npm run build` → `Cache Components enabled`, `✓ Compiled successfully`,
+  `ƒ Proxy (Middleware)` registrado.
+- `npm run db:migrate:local` → 11 comandos aplicados no D1 local.
+- `npm run dev` → pronto em 444ms, `Using secrets defined in .dev.vars`.
+- `GET /` → 200, `lang="pt-BR"`, `<title>Minuto Eclesiástico</title>`,
+  script anti-FOUC presente, tokens `oklch` compilados com fallback hex/lab.
+- `POST /api/cron/ingest` → 401 sem token · 401 com token errado ·
+  404 com token válido (passa o proxy; a rota é da Fase 1.B).
+
+### Arquivos-chave criados
+```
+next.config.ts            cacheComponents + cacheLife + remotePatterns
+open-next.config.ts       adapter Cloudflare
+wrangler.jsonc            app (D1 DB, R2 MEDIA, AI) — SEM crons, de propósito
+workers/scheduler/        Worker agendador (crons */15 e mensal)
+drizzle.config.ts         gera em drizzle/migrations, wrangler aplica
+src/db/schema.ts          CONTRATO entre as camadas — não alterar sem migration
+src/db/index.ts           getDb() / getEnv()
+src/lib/env.ts            validação zod + getUserAgent()
+src/lib/utils.ts          cn()
+src/proxy.ts              fronteira de rede, CRON_SECRET
+src/app/globals.css       tokens oklch do design + prefers-reduced-motion
+src/app/layout.tsx        next/font auto-hospedado + anti-FOUC
+cloudflare-env.d.ts       gerado (NÃO ignorado no git — CI precisa)
+```
+
+---
+
+## 5a. ✅ BUILD CONSERTADO (28/07/2026) + primeira execução real do modelo
+
+### Causa do build quebrado: `.wrangler/state` órfão
+Quando o `database_id` mudou de `PLACEHOLDER…` para o ID real, o **Miniflare
+passou a apontar para um banco local NOVO e vazio** — ele indexa o
+armazenamento local por `database_id`. O erro críptico
+`"Failed to parse body as JSON, got: Error: internal error"` era query contra
+tabela inexistente.
+**Solução:** `rm -rf .wrangler/state && npm run db:migrate:local`.
+→ Sempre que trocar `database_id`, refazer as migrations locais.
+
+Build hoje: **EXIT=0**, com os perfis de cache aplicados —
+`/` 5m/15m (`homeFeed`), `/busca` 10m/30m (`category`), `/categoria/[slug]` e
+`/noticia/[slug]` como `◐ Partial Prerender`.
+
+### Autenticação: NÃO é preciso `CLOUDFLARE_API_TOKEN`
+`wrangler login` (OAuth, em `~/.config/.wrangler/config/default.toml`) basta para
+`CF_REMOTE_BINDINGS=true npm run dev`. O token só faria falta em ambiente
+não-interativo (CI).
+
+### Dois bugs reais encontrados ao chamar o modelo de verdade
+
+1. **`AbortSignal` quebra o binding AI.** Passar
+   `{ signal: AbortSignal.timeout(ms) }` a `env.AI.run()` dá
+   `DevalueError: Cannot stringify arbitrary non-POJOs` — em dev o binding é um
+   proxy que serializa a chamada, e `AbortSignal` não é POJO. Trocado por
+   `Promise.race`. **Só aparece chamando o modelo de verdade.**
+2. **`response_format` é REJEITADO, não ignorado.** A API responde
+   `5025: This model doesn't support JSON Schema` e derruba a requisição
+   inteira. A suposição de 1.C (mandar assim mesmo e deixar o `extrairJson()`
+   cobrir) estava errada quanto ao comportamento da API. Campo removido.
+
+### ✅ RESOLVIDO (28/07) — o pipeline publica. Três bugs, nenhum era o modelo.
+
+Modelo em uso: **`@cf/meta/llama-3.3-70b-instruct-fp8-fast`** (gratuito).
+Trocável por `WORKERS_AI_MODEL=<apelido|id>` sem rebuild; apelidos em
+`MODELOS_AVALIADOS`.
+
+**Bug 1 — `max_tokens: 1500` cortava a resposta.** O corpo alvo vai a 3.200
+caracteres (~950 tokens em PT) + título + dek + tags + moldura. → 4.000.
+
+**Bug 2 — JSON é o envelope errado para markdown longo.** O modelo escrevia
+`"corpo_md":` e despejava markdown cru, com quebras de linha e aspas internas
+sem escapar. **8B e 70B falhavam no MESMO ponto**, o que descartou capacidade
+como causa. → Formato de blocos (`TITULO:` / `DEK:` / `CATEGORIA:` / `TAGS:` /
+`CORPO:`), sem problema de escape. `parsearBlocos()` em `prompt.ts`; o JSON
+segue como reserva para o provider Anthropic.
+
+**Bug 3 — o checador reprovava OMISSÃO como divergência factual.** Das 5
+"divergências" de um artigo, todas eram *"a versão em português não menciona a
+data exata"*. Mas o formato é adaptação de 40–50% — descartar detalhe é o
+objetivo. O prompt já mandava ignorar omissão e o modelo ignorou a instrução.
+→ Filtro determinístico `ehQueixaDeOmissao()` em `parsearVerificacao`, estreito
+o bastante para não engolir contradição real ("diz 5 bispos, o original diz 12"
+tem forma afirmativa e continua reprovando).
+
+Também corrigido: `AbortSignal` no `env.AI.run()` dava
+`DevalueError: Cannot stringify arbitrary non-POJOs` (→ `Promise.race`), e
+`response_format` é **rejeitado** com `5025: This model doesn't support JSON
+Schema`, não ignorado (→ removido). Timeouts: 180s adaptação / 120s verificação.
+
+**Resultado medido:** 3 artigos → **2 publicados, 1 reprovado**, ~25s/artigo.
+Qualidade do PT-BR e da terminologia conferida à mão e aprovada
+(diácono, capelão de hospício, sacramentos da iniciação, Diocese de Tucson,
+arcebispo de Miami, cultura da morte, ensinamento da Igreja). Proporções: 26% e
+57% do original.
+
+### Lote maior (28/07) e Sign of the Cross resolvido
+
+- **Teto de proporção subido de 55% para 60%** (`TETO_PROPORCAO` em
+  `guardrails.ts`), a pedido do usuário.
+- **SOTC: de 0/25 para 18/26 adaptáveis.** Criado
+  `src/services/ingestion/article-body.ts`, que extrai os parágrafos do corpo da
+  página com `htmlparser2` (contêiner `entry-content` do WordPress, com reserva
+  por parágrafos longos). Medido numa página real: 14 parágrafos, 4.167 chars.
+  A fila de enriquecimento passou a incluir `sourceLength < 1750`, senão artigos
+  com imagem mas texto curto ficariam presos em `draft` para sempre.
+  Material bruto agora equivale ao `content:encoded` do EWTN.
+- **Lote de 10: 3 publicados, 7 reprovados, ~21s por artigo.**
+  Todas as 7 reprovações em `verificacao_factual` (2 delas também `proporcao`).
+
+⚠️ **Taxa de publicação de 30%.** O checador factual reprova 70%. Falha fechada,
+que é a direção certa, mas provavelmente ainda há falso positivo além do filtro
+de omissão. Próximo passo para melhorar: logar as divergências reprovadas e
+classificá-las à mão — se forem majoritariamente omissão disfarçada ou
+reformulação, ampliar o filtro; se forem invenção real, o modelo é o limite.
+
+⚠️ **`tokensIn`/`tokensOut` voltam 0** — o Workers AI não reporta uso nesta
+variante, então o consumo de Neurons **não é mensurável pela resposta**.
+
+### 🔴 CONSUMO DE NEURONS — MEDIDO (28/07/2026)
+
+A cota diária **esgotou** durante os testes:
+```
+4006: you have used up your daily free allocation of 10,000 neurons
+```
+
+Ordem de grandeza medida: **~34 tentativas de artigo consumiram os 10.000
+Neurons/dia**, com `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. Cada tentativa
+são DUAS chamadas (adaptação + verificação), ambas carregando o glossário.
+
+**Implicação direta:** as duas fontes produzem ~75 itens/dia (50 EWTN + 25
+SOTC). A cota gratuita cobre menos da metade disso com o 70B. Caminhos:
+1. Modelo menor (`mistral24b`, `gemma12b`) — mais artigos por Neuron, qualidade
+   a verificar;
+2. Reduzir para 1 chamada por artigo (dispensar a verificação factual);
+3. Plano pago do Workers AI;
+4. Aceitar publicar ~30/dia e deixar o resto na fila.
+
+O erro de cota é classificado como `quota` e **adia** o item (continua `draft`),
+nunca reprova — o fail-safe funcionou como projetado.
+
+### ✅ Quatro pendências fechadas + estratégia de cota (28/07)
+
+**Decisão do usuário sobre cota:** publicar ~30/dia e enfileirar o resto,
+100% gratuito. Aceita ficar atrás das fontes, desde que não muito.
+
+**Modelos assimétricos** — a ideia que faz essa escolha render mais:
+`WORKERS_AI_MODEL=llama70b` (adaptação, onde a qualidade se decide) e
+`WORKERS_AI_VERIFY_MODEL=mistral24b` (verificação, tarefa mais simples).
+Cada artigo custa 2 chamadas; baixar só a segunda aumenta a vazão sem tocar no
+texto que o leitor vê. Se o falso positivo do checador subir, voltar com
+`WORKERS_AI_VERIFY_MODEL=llama70b`.
+> A fila já processava do mais recente para o mais antigo (`publishedAt desc`),
+> que é o que impede o portal de publicar notícia velha enquanto se atrasa.
+
+**Slug em PT-BR** (`escolherSlugPtBr` em `adapt.ts`): refeito no momento da
+publicação, a partir do título traduzido — antes a URL saía em inglês. Colisão
+resolve com sufixo derivado do id (determinístico); se nem assim, mantém o slug
+antigo. URL feia é melhor que falha de gravação com o artigo pronto.
+
+**Requeue** (`src/services/translation/requeue.ts`): devolve à fila só o que
+reprovou por causa de FORMA (`resposta_invalida`, checador sem veredito).
+Causas de CONTEÚDO — número inventado, idioma, proporção, atribuição — nunca
+voltam: reprocessar é apostar que o modelo não invente de novo. Máx. 2
+tentativas, janela de 3 dias. Ligado ao início de `/api/cron/adapt`.
+Testado: examinou 1, devolveu 0 (a causa era `proporcao`, definitiva). ✔
+
+**Health-check** (`GET /api/health`, público, sem `CRON_SECRET` — um
+health-check que exige segredo não serve para monitor externo). Devolve **503**
+quando parado, para o monitor disparar alerta; 200 com `estado: "degradado"`
+quando serve mas precisa de atenção. Expõe contagens e carimbos, nunca conteúdo
+ou mensagem de erro crua. Testado: detectou as 3 execuções com erro por cota. ✔
+
+**Env**: `TRANSLATION_PROVIDER`, `WORKERS_AI_MODEL`, `WORKERS_AI_VERIFY_MODEL`
+declarados no `wrangler.jsonc` e validados por zod em `src/lib/env.ts`.
+
+**Cron de adaptação ligado** no agendador (`5,20,35,50 * * * *`) — a rota
+existia mas nunca era disparada. Fica 5 min após a ingestão.
+
+⏳ **Pendente:** validar a vazão real com os modelos assimétricos. A cota do dia
+esgotou durante os testes; reset às 00:00 UTC (21h BRT).
+
+### 🔴 BUG DA CLOUDFLARE — cota não libera após o reset (29/07)
+
+Testado em **01:58 UTC de 29/07**, quase 2h depois do reset documentado das
+00:00 UTC: a API continua devolvendo
+
+```
+AiError: 4006: you have used up your daily free allocation of 10,000 neurons
+```
+
+**Não é o nosso código.** É problema conhecido e recorrente do Workers AI, com
+vários relatos abertos na comunidade da Cloudflare — o 4006 persiste depois do
+reset *enquanto o painel mostra 0/10k de uso*:
+- community.cloudflare.com/t/workers-ai-daily-free-neuron-quota-did-not-reset-at-00-00-utc/941565
+- community.cloudflare.com/t/workers-ai-free-daily-limit-stuck-4006-errors-while-todays-usage-is-0-neurons/942709
+- community.cloudflare.com/t/workers-ai-returns-429-error-4006-after-daily-quota-reset-dashboard-shows-0-10k/941039
+
+**Consequência para o projeto:** o free tier do Workers AI não é só *limitado*,
+é *não confiável* — a cota pode não liberar por horas sem explicação. Isso
+muda a premissa da escolha "100% gratuito": não é questão de publicar menos
+por dia, é de poder não publicar nada em dias inteiros.
+
+**O que funcionou:** a postura fail-closed segurou. Todos os artigos ficaram em
+`draft`, nada foi publicado sem verificação, nada foi queimado. O erro é
+classificado como `quota` e **adia**. O sistema se comportou exatamente como
+projetado diante de uma falha de infraestrutura de terceiro.
+
+**Ainda NÃO medido:** a vazão real com os modelos assimétricos
+(`llama70b` adapta / `mistral24b` verifica). Depende da cota liberar.
+
+### Correção de afirmação anterior
+
+Eu havia dito que a rota de ingestão precisava invalidar cache. **Errado.** Ela
+insere tudo como `draft`, e o site só lê `published` — não há o que invalidar.
+Quem publica é `/api/cron/adapt`, e essa **já chama** `invalidarAposPublicar`.
+
+### Correções da rodada de guard-rails (28/07)
+
+- **Verificação em formato de linhas** (`VEREDITO:` / `DIVERGENCIAS:`) em vez de
+  JSON. Motivo: de 5 reprovações factuais, 4 eram "checagem não produzida".
+- **Prompt do checador reescrito com REGRA ZERO** e exemplos reais do que NÃO é
+  divergência. Ele estava apontando a própria tradução: *"Papa Leão XIV alerta
+  jovens" — o original dizia "Pope Leo XIV: Use AI prudently"*. Um achado era
+  real e legítimo: *"Papa Francisco" onde o original dizia "Pope Leo XIV"*.
+- **Filtro `ehRuidoDeTraducao()`** para queixas de formato de data e tradução.
+- **Filtro de omissão ampliado** (faltavam "não fornece", "não dá", "apenas
+  menciona", "se limita a").
+- **"Sem veredito" passou a ADIAR, não reprovar.** Tratar falha de formatação do
+  checador como reprovação definitiva queimava o artigo — chegou a zerar um lote
+  de 8. Agora o item continua `draft` e o próximo cron tenta de novo. Continua
+  fail-closed: nada vai ao ar sem checagem.
+
+---
+
+### 🔴 Histórico — primeira execução (antes dos consertos acima)
+
+```
+vistos:2  publicados:0  reprovados:1  adiados:1  duracaoMs:76754
+  reprovado → "resposta do modelo não continha um objeto JSON com
+               titulo, dek e corpo_md"
+  adiado    → "Timeout de 45000ms"
+```
+
+**Zero publicados. ~38s por artigo.** Sem JSON Schema, o Llama 3.1 8B não
+devolve JSON parseável de forma confiável, e estoura o timeout de 45s.
+Os guard-rails funcionaram: nada foi ao ar.
+
+### 🔴 Sign of the Cross: 0 de 25 artigos são adaptáveis
+O feed só traz excerpt (49–709 chars). O pré-voo reprova corretamente:
+*"texto original com 96 caracteres; são necessários ao menos 1750 […]. Adaptar
+a partir deste texto exigiria inventar."* EWTN: **47 de 50 adaptáveis**.
+→ Decisão de produto pendente: buscar o corpo na página do artigo, rebaixar
+SOTC a card de "título + link", ou remover a fonte.
+
+### Distribuição de categorias após o conserto do mapeamento
+`mundo 29 · vaticano 18 · doutrina 8 · patrimonio 5 · santos 5 · caridade 3 ·
+juventude 2 · liturgia 2 · opiniao 2 · missoes 1` (antes: 74 em `vaticano`).
+
+---
+
+## 5b. Histórico — diagnóstico do build (resolvido em §5a)
+
+`npm run typecheck` passa limpo. **`npm run build` falha** com
+`Error occurred prerendering page "/categoria/[slug]"`.
+
+### O que já foi eliminado como causa (não repetir os testes)
+
+| Hipótese | Resultado |
+|---|---|
+| `params` consumido fora de `<Suspense>` | **Era causa real.** Corrigido: `params`/`searchParams` agora descem como promise para dentro da fronteira. O erro *"Uncached data was accessed outside of `<Suspense>`"* sumiu. |
+| `getSiteUrl()` lendo o binding do Worker no `generateMetadata` | **Era causa real.** Corrigido com `getSiteUrlSync()` lendo `process.env` (`SITE_URL` é var pública, não segredo). |
+| `initOpenNextCloudflareForDev` desligado no build | Reativado com `remoteBindings: false` → o Miniflare local passa a ser alcançado. |
+| Binding `AI` forçar conexão remota | **Descartado.** Removi o binding e o erro continuou. |
+| Contenção dos 7 workers de build no SQLite local | **Descartado.** `experimental.cpus: 1` não resolveu. |
+| `await connection()` na ilha de dados | **Não resolveu.** |
+
+### Erro real observado (com bindings locais ativos)
+
+```
+at async bI (src/lib/articles.ts:100:18)
+  99 |   const db = await getDb();
+> 100 |   const linhas = await db.selectDistinct({ slug: articles.categorySlug })
+[cause]: Error: Failed to parse body as JSON, got: Error: internal error;
+         reference = bpm09j08svn0l1sl2lp5nq9q
+  at D1DatabaseObject.queryExecute (miniflare/.../d1/database.worker.js:196)
+```
+
+A query que quebra é `categoriasComConteudo()` — `SELECT DISTINCT category_slug`.
+Chega ao Miniflare e volta erro interno do D1.
+
+### Próximas hipóteses a testar, em ordem
+
+1. **`selectDistinct` do Drizzle sobre D1.** Rodar a mesma query crua com
+   `wrangler d1 execute --local --command "SELECT DISTINCT category_slug FROM articles WHERE status='published'"`.
+   Se a crua funciona, o problema é o SQL que o Drizzle gera — trocar por
+   `select({slug}).from(articles).where(...).groupBy(articles.categorySlug)`.
+2. **`generateMetadata` de `/categoria/[slug]`**, que chama `metadataCategoria`
+   → `listarArtigosPublicados` em `src/lib/seo.ts`. Metadata não está dentro de
+   Suspense e pode ser o acesso remanescente.
+3. Se nada resolver: aceitar que nenhuma rota toque o D1 em build e mover a
+   navegação (header/rodapé) para lista estática de `CATEGORIAS`, perdendo o
+   filtro "só editoria com conteúdo".
+
+### Não desfazer
+
+O trabalho de `<Suspense>`/PPR e `getSiteUrlSync` está **correto e deve ficar** —
+ambos corrigiram erros reais e distintos. O que falta é só a query acima.
+
+---
+
+## 6. Próximo passo exato
+
+Fase 0 concluída. Abrir a **Fase 1** com quatro frentes paralelas, todas
+contra o schema já congelado em `src/db/schema.ts`:
+
+- **A — Design:** portar `Blog Notícias Católicas.dc.html` para
+  `src/components/` + `src/app/(site)/`, com dados mockados no formato do schema.
+- **B — Ingestão:** `src/services/ingestion/` + `/api/cron/ingest`.
+- **C — Adaptação:** `src/services/translation/` (provider, glossário, guard-rails).
+- **D — SEO + Liturgia:** metadata/JSON-LD/sitemaps/feed + parser do calendário
+  de 1962 do Salve Maria + `/api/cron/liturgy`.
+
+Regra de não-colisão: **nenhuma frente edita `package.json`, `wrangler.jsonc`,
+`src/db/schema.ts` ou `globals.css`.** Qualquer necessidade nesses arquivos vira
+pedido para a integração (Fase 2), não edição direta.
