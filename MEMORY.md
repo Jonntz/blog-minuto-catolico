@@ -616,6 +616,56 @@ para o log ficar legível; com o binding o host é irrelevante para o roteamento
 `segundosDesdeUltima: 6110` era o sinal, e estava correto desde sempre. Faltou
 eu olhar para ele em vez de para a cota.
 
+### 🔴 BUILD AUTOMÁTICO (Cloudflare Workers Builds) quebrou — 29/07
+
+```
+Error: Failed query: select distinct "category_slug" from "articles" ...
+[cause]: D1_ERROR: no such table: articles: SQLITE_ERROR
+   at bI (src/lib/articles.ts:100)   ← categoriasComConteudo()
+```
+
+**Causa: o build lê o D1 LOCAL.** Sob Cache Components, função com `"use cache"`
+é avaliada em tempo de build para pré-render. O `<Suspense>` em volta de
+`<NavPrincipal>`/`<ListaDeEditorias>` protege contra dado *dinâmico*, mas **não
+impede o Next de resolver conteúdo cacheado no build**. Na máquina local passa
+porque `.wrangler/state` tem o schema migrado; no CI esse diretório é
+git-ignored e nasce vazio.
+
+Clássico "funciona na minha máquina" — e já tinha nos mordido antes (§5a, o
+`.wrangler/state` órfão). A diferença é que agora a divergência é permanente,
+porque o CI sempre nasce limpo.
+
+**Conserto — o build passa a migrar o banco local sempre:**
+```json
+"cf:build":   "npm run db:migrate:local && opennextjs-cloudflare build",
+"cf:preview": "npm run cf:build && opennextjs-cloudflare preview",
+"cf:deploy":  "npm run cf:build && opennextjs-cloudflare deploy",
+```
+`wrangler d1 migrations apply --local` é idempotente e não-interativo
+(`✅ No migrations to apply!`, exit 0), então serve para CI e para local.
+
+**Verificado do jeito certo:** `rm -rf .wrangler/state && npm run cf:build`
+reproduz a condição exata do CI e completa até `Worker saved`.
+
+**Config no painel (Workers Builds):**
+- Build command: `npm run cf:build`
+- Deploy command: `npx wrangler deploy` (`main` já é `.open-next/worker.js`)
+
+**Três armadilhas operacionais do CI — não esquecer:**
+1. **O agendador NÃO é deployado por esse build.** `minuto-catolico-scheduler`
+   é outro Worker; mudanças nele exigem
+   `npx wrangler deploy --config workers/scheduler/wrangler.jsonc`.
+2. **Migração REMOTA não roda no CI**, de propósito — CI não deve alterar
+   schema de produção. Mudou o schema? `npm run db:migrate:remote` na mão,
+   *antes* do deploy.
+3. Secrets vivem no Worker, não no repo: `CRON_SECRET` sobrevive aos deploys.
+
+**Aberto para conferir quando houver artigo publicado:** o build pré-renderiza
+`categoriasComConteudo()` contra um D1 local **vazio**, então a nav nasce sem
+editorias. Deve se corrigir sozinho no primeiro `invalidarAposPublicar()` (que
+já invalida `TAGS.categoriasComConteudo`). Confirmar que corrige de fato — o
+`open-next.config.ts` roda com cache incremental padrão, sem R2.
+
 ### Correção de afirmação anterior
 
 Eu havia dito que a rota de ingestão precisava invalidar cache. **Errado.** Ela
