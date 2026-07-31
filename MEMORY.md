@@ -713,6 +713,104 @@ com `llama70b` nas duas pontas. Os modelos assimétricos
 A cota voltou a esgotar (4006 a partir de 23:50 UTC) — agora por consumo real,
 não pelo bug. Comportamento esperado do free tier.
 
+## 5c. 🔴 SITE INTEIRO FORA DO AR — stream de RSC fatiado em 4096 bytes (31/07)
+
+Sintoma reportado: toda página exibia lixo de texto no topo e, abaixo,
+`"This page couldn't load"` — a error boundary padrão do Next. Capa e artigos,
+igualmente. Começou no deploy de 30/07 à noite.
+
+**Não era o `connection()` daquele commit, nem o D1, nem cache.** O servidor
+respondia HTTP 200 com HTML completo. O que estava corrompido era a ORDEM DOS
+BYTES.
+
+### O que foi medido
+
+Rodando a resposta de produção por um parser JS, três `<script>` da capa (e um
+de cada artigo) não compilam:
+
+```
+Uncaught SyntaxError: Unexpected identifier 'preload'
+```
+
+O corte é sempre no mesmo lugar — **exatamente 4096 bytes depois do `<script>`**,
+medido em 5 páginas:
+
+```
+<script>self.__next_f.push([1,"…font-display font-semi   ← corta aqui (byte 4096)
+<link rel="preload" as="image" …><div hidden id="S:4">…</div>
+<script>$RC("B:4","S:4")</script>
+bold tracking-[-0.03em]…"])</script>                      ← resto vaza como TEXTO
+```
+
+`font-semi` + `bold tracking-…` = `font-semibold tracking-…`. O chunk continua
+depois; alguém enfiou HTML no meio dele. O `<script>` quebrado derruba a
+hidratação da árvore inteira — daí a página morrer por completo.
+
+### Causa raiz
+
+`createInlinedDataReadableStream()` (Next) cria o stream que embute o payload RSC
+com `type: "bytes"`. Cada `enqueue()` é UMA tag `<script>…</script>` inteira.
+`createFlightDataInjectionTransformStream()` consome esse stream com um reader
+COMUM e reemite no mesmo controller por onde passa o HTML do React — os dois se
+intercalam de propósito.
+
+Em Node isso é seguro: reader comum devolve o chunk inteiro. **No workerd não.**
+Medido no mesmo workerd que serve o site, em todos os regimes de temporização:
+
+```
+type: undefined  → [4500, 4500, 4500]        (Node e workerd concordam)
+type: "bytes"    → [4096, 404, 4096, 404, …] (só workerd)
+```
+
+As tags de payload ficam em ~4400–4600 bytes assim que a página tem conteúdo
+real — ou seja, **passam de 4096 e são fatiadas**. Antes de 30/07 o site tinha
+poucos artigos e os chunks cabiam abaixo do limite; foi o volume de conteúdo que
+revelou o bug, não o commit.
+
+Bug upstream, sem knob de configuração: Next 16.2.12 + @opennextjs/cloudflare
+1.20.2, ambos os mais recentes em 31/07/2026. `defineCloudflareConfig` não expõe
+hook de patch de código.
+
+### Conserto — `scripts/patch-next-flight-stream.mjs`
+
+Remove `type: "bytes"` desse stream. Ele nunca é lido em modo BYOB, então o
+`type` não comprava nada e era só o gatilho do fatiamento.
+
+Roda no `postinstall` **e** no `cf:build` — um CI com `--ignore-scripts`
+publicaria o site quebrado sem avisar. Idempotente. Se o alvo sumir numa
+atualização do Next, o script **falha o build** de propósito, em vez de virar
+no-op silencioso.
+
+**Armadilha que custou um ciclo:** patchar
+`dist/server/app-render/use-flight-response.js` compila e **não conserta nada**.
+O que roda é o servidor pré-compilado em
+`dist/compiled/next-server/app-page*.runtime.*.js` — é dele que o esbuild do
+OpenNext monta o `handler.mjs`. O script patcha os dois conjuntos (10 arquivos).
+Nos runtimes minificados, só o stream do flight usa método abreviado (`start(`);
+os do React usam `start:function(` — é isso que os separa sem depender de nome
+de variável.
+
+### Verificado
+
+- `handler.mjs` reconstruído: 2 streams de flight, 0 com `type:"bytes"`
+- `wrangler dev` local com 14 artigos semeados, chunks de 4363–4644 bytes:
+  49 scripts na capa, 35 no artigo, **0 quebrados**
+- `tsc --noEmit` limpo
+
+**`wrangler dev --local` NÃO reproduz o bug** (testado com `type:"bytes"`
+reintroduzido no bundle: 0 quebras). A temporização local não fecha a janela.
+Não confie em preview local para regressão disso — meça a resposta de produção.
+
+### Como conferir se voltou
+
+```bash
+curl -s https://minutocatolico.com.br/ > /tmp/h.html
+# todo <script> inline tem de compilar; qualquer erro = stream corrompido
+```
+
+Sinal barato no navegador: `Uncaught SyntaxError` vindo do próprio documento
+(não de `/_next/static/*`).
+
 ### 🔴 O checador desperdiça mais da metade da cota em falso positivo
 
 Das 34 reprovações, a esmagadora maioria é `verificacao_factual`, e a inspeção
