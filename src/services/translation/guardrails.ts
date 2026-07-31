@@ -83,9 +83,16 @@ export const LIMITES = {
   MAX_TAGS: 6,
   MAX_CHARS_TAG: 32,
 
-  /** Não deixar `validationErrors` virar um blob gigante no D1. */
+  /**
+   * Não deixar `validationErrors` virar um blob gigante no D1.
+   *
+   * 500 e não 300 porque uma divergência factual cita DOIS trechos — o adaptado
+   * e o original — e 300 cortava o segundo no meio. Sem o segundo trecho a
+   * reprovação é inauditável, e é ele que o filtro estrutural compara.
+   * Teto real: 20 × 500 ≈ 10 KB por artigo, no pior caso.
+   */
   MAX_ERROS_REGISTRADOS: 20,
-  MAX_CHARS_POR_ERRO: 300,
+  MAX_CHARS_POR_ERRO: 500,
 } as const;
 
 /**
@@ -625,13 +632,28 @@ const REGRAS: readonly RegraGuardRail[] = [
       // é justamente o tipo de saída confusa que um modelo pequeno produz.
       // Tratamos como reprovação, não como ruído a ignorar.
       if (divergencias.length > 0) {
-        const lista = divergencias
+        /**
+         * UMA entrada por divergência — não uma string só com tudo junto.
+         *
+         * Antes as seis divergências eram concatenadas com " | " num único
+         * erro, e o corte global de `MAX_CHARS_POR_ERRO` caía sobre a string
+         * inteira. Resultado medido em produção: o registro guardava pouco mais
+         * que a primeira divergência, cortada no meio da palavra
+         * (`"em 16 de julho de 2026" — o original dizia "the d…`).
+         *
+         * Como não existe painel de revisão humana, `validation_errors` É a
+         * auditoria. Registro truncado torna a reprovação inauditável — não dá
+         * para saber se o guard-rail acertou ou barrou artigo bom. Uma entrada
+         * por divergência faz o corte incidir sobre cada uma, que cabe.
+         */
+        return divergencias
           .slice(0, 6)
-          .map((d) => d.trim().slice(0, LIMITES.MAX_CHARS_POR_ERRO))
-          .filter((d) => d.length > 0);
-        return [
-          `verificacao_factual: ${divergencias.length} divergência(s) apontada(s) pelo checador: ${lista.join(" | ")}`,
-        ];
+          .map((d) => d.trim())
+          .filter((d) => d.length > 0)
+          .map(
+            (d, i) =>
+              `verificacao_factual: divergência ${i + 1}/${divergencias.length}: ${d}`,
+          );
       }
 
       if (!consistente) {

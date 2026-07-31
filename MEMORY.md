@@ -635,17 +635,46 @@ Clássico "funciona na minha máquina" — e já tinha nos mordido antes (§5a, 
 `.wrangler/state` órfão). A diferença é que agora a divergência é permanente,
 porque o CI sempre nasce limpo.
 
-**Conserto — o build passa a migrar o banco local sempre:**
-```json
-"cf:build":   "npm run db:migrate:local && opennextjs-cloudflare build",
-"cf:preview": "npm run cf:build && opennextjs-cloudflare preview",
-"cf:deploy":  "npm run cf:build && opennextjs-cloudflare deploy",
-```
-`wrangler d1 migrations apply --local` é idempotente e não-interativo
-(`✅ No migrations to apply!`, exit 0), então serve para CI e para local.
+**❌ PRIMEIRA TENTATIVA, DESCARTADA — não repetir:** fazer o `cf:build` rodar
+`db:migrate:local` antes de compilar. Passou uma vez (logo após
+`rm -rf .wrangler/state`) e depois falhou de forma reprodutível:
 
-**Verificado do jeito certo:** `rm -rf .wrangler/state && npm run cf:build`
-reproduz a condição exata do CI e completa até `Worker saved`.
+```
+SQLite failed; database is locked: SQLITE_BUSY
+Error occurred prerendering page "/"
+```
+
+`wrangler d1 migrations apply --local` sobe um `workerd`, escreve no WAL e sai
+sem checkpoint (`.sqlite` com 4 KB, `-wal` com 400 KB); o `workerd` seguinte não
+recupera esse WAL. Apagar o `-shm` órfão **não** resolve — testado. O que tinha
+"consertado" no teste isolado foi não ter rodado a migração, não o `rm`.
+
+Lição: eu estava tratando sintoma. A pergunta certa era *por que o build precisa
+de banco*.
+
+**✅ CONSERTO REAL — `connection()` nas ilhas que leem D1.** O projeto já usava
+esse padrão em `sitemap.ts`, `robots.ts`, `feed.xml`, `news-sitemap.xml`,
+`today-line.tsx` e na página de categoria. Faltavam quatro pontos, agora
+corrigidos:
+
+- `src/components/layout/nav.ts` → `itensDaNavegacao()` e `itensDoRodape()`
+- `src/app/(site)/page.tsx` → `Destaques()`, `Ultimas()`, `FaixaEditorial()`
+
+`busca` e `noticia/[slug]` não precisaram: já consomem `searchParams`/`params`,
+que são dado de requisição e já as tornam dinâmicas.
+
+**O ganho é maior que destravar o CI.** O que era pré-renderizado vinha do D1
+**local**, que não é o de produção — a casca do site nascia com a navegação e as
+manchetes de outro banco. `connection()` elimina isso. O `"use cache"` do data
+layer continua valendo: ele diz "não resolva no build", não "não cacheie".
+
+Com isso o build **não toca em banco nenhum** e `cf:build` voltou a ser só
+`opennextjs-cloudflare build`.
+
+**Verificado nas duas pontas:**
+- `rm -rf .wrangler && npm run cf:build` → `OpenNext build complete` (caso do CI)
+- com o banco local migrado → idem, sem `SQLITE_BUSY`
+- `tsc --noEmit` limpo
 
 **Config no painel (Workers Builds):**
 - Build command: `npm run cf:build`
@@ -660,11 +689,64 @@ reproduz a condição exata do CI e completa até `Worker saved`.
    *antes* do deploy.
 3. Secrets vivem no Worker, não no repo: `CRON_SECRET` sobrevive aos deploys.
 
-**Aberto para conferir quando houver artigo publicado:** o build pré-renderiza
-`categoriasComConteudo()` contra um D1 local **vazio**, então a nav nasce sem
-editorias. Deve se corrigir sozinho no primeiro `invalidarAposPublicar()` (que
-já invalida `TAGS.categoriasComConteudo`). Confirmar que corrige de fato — o
-`open-next.config.ts` roda com cache incremental padrão, sem R2.
+**✅ RESOLVIDO junto:** eu havia registrado aqui a preocupação de o build
+pré-renderizar `categoriasComConteudo()` contra um D1 local vazio, deixando a
+nav sem editorias até a primeira publicação. Com `connection()` nas ilhas, isso
+deixou de existir — a navegação passa a ser lida sempre em requisição, do banco
+de produção.
+
+### ✅ COTA LIBEROU — primeira medição real do pipeline completo (30/07)
+
+O site está publicando. Domínio no ar, servindo a app:
+`curl https://minutocatolico.com.br` → `<title>Minuto Católico</title>`, HTTP 200.
+Delegação concluída (`lakas`/`mona.ns.cloudflare.com`), sem `dsrecord`.
+
+```json
+{"estado":"degradado","artigos":{"publicados":21,"naFila":71,"reprovados":34}}
+```
+
+**VAZÃO MEDIDA (fecha a pendência que estava aberta):** 21 publicados + 34
+reprovados = **~55 tentativas por dia** de cota gratuita, contra **~34** medidas
+com `llama70b` nas duas pontas. Os modelos assimétricos
+(`llama70b` adapta / `mistral24b` verifica) **aumentaram a vazão em ~60%**.
+
+A cota voltou a esgotar (4006 a partir de 23:50 UTC) — agora por consumo real,
+não pelo bug. Comportamento esperado do free tier.
+
+### 🔴 O checador desperdiça mais da metade da cota em falso positivo
+
+Das 34 reprovações, a esmagadora maioria é `verificacao_factual`, e a inspeção
+das divergências mostra os dois tipos misturados:
+
+**Reprovação CORRETA (manter barrando):**
+- `"Desde a Guerra da Independência"` ← original `"From the battlefields of the
+  Civil War"`. Guerra Civil → Guerra da Independência. Erro factual grave.
+- 3 por `proporcao` (86.7%, 66.8%, 65.3% do original) — republicação disfarçada.
+
+**FALSO POSITIVO (a tradução fazendo o trabalho dela):**
+- `"Papa Francisco o declarou beato"` ← `"Pope Francis declared him blessed"`
+- `"a freira Leticia Ugboaja"` ← `"Sister Leticia Ugboaja"` (37 "divergências")
+- `"primeira gala"` ← `"inaugural gala"` · `"Papa Leo XIV"` ← `"Leo XIV"`
+
+**Por que `RE_RUIDO_DE_TRADUCAO` não pega:** ele procura o checador *se
+explicando* ("formato de data", "apenas tradução"). Estas divergências só
+justapõem `"A" — o original dizia "B"`, sem palavra explicativa. Não há o que
+casar lexicalmente.
+
+**O custo é duplo, e é isto que torna urgente:** cada falso positivo gasta 2
+chamadas de modelo (adaptar + verificar) da cota escassa **e** perde um artigo
+bom. 34 das 55 tentativas do dia foram para o lixo. Corrigir isto é o caminho
+mais barato para chegar aos ~30/dia que o usuário pediu — sem gastar 1 Neuron a
+mais.
+
+**Sinal discriminante identificado (ainda NÃO implementado — decisão do
+usuário pendente):** comparar *tokens duros* entre os dois trechos citados —
+números/anos e nomes próprios. Nos falsos positivos eles batem
+(`Leticia Ugboaja` = `Leticia Ugboaja`, `Leo XIV` = `Leo XIV`,
+`Francis`≈`Francisco`); no achado real não batem (`Civil` ≢ `Independência`).
+É computável sem modelo e é exatamente o que o CLAUDE.md §1 protege.
+Custo conhecido: `"in the fall of 2027"` → `"a partir de 2027"` passaria a
+escapar (perda de nuance, não fato falso).
 
 ### Correção de afirmação anterior
 

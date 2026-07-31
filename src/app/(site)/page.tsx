@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { ArticleCard } from "@/components/article/article-card";
 import { Editorial } from "@/components/home/editorial";
@@ -76,6 +77,11 @@ export default function Home() {
  * notícia a esconda — é justamente o que sustenta a capa enquanto a fila drena.
  */
 async function Destaques() {
+  // `connection()` porque o binding do D1 não existe no build — e porque o que
+  // fosse pré-renderizado viria do banco LOCAL, não do de produção. Ver a nota
+  // longa em `src/components/layout/nav.ts`.
+  await connection();
+
   const [artigos, destaquesSemana] = await Promise.all([
     listarPublicados(3),
     listarDestaquesDaSemana(4),
@@ -171,6 +177,7 @@ function DestaquesSkeleton() {
 }
 
 async function Ultimas() {
+  await connection();
   const artigos = await listarPublicados(30);
   const doFiltro = artigos.slice(3);
   if (doFiltro.length === 0) return null;
@@ -210,6 +217,7 @@ async function Ultimas() {
 }
 
 async function FaixaEditorial() {
+  await connection();
   const artigo = await buscarEditorial();
   return <Editorial artigo={artigo} />;
 }

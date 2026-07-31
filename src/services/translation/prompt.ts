@@ -17,6 +17,7 @@ import {
   montarBlocoVetosRito1962,
   TIPOS_NUCLEO,
 } from "./glossary";
+import { ehRuidoEstrutural } from "./divergencias";
 import { LIMITES } from "./guardrails";
 import type {
   PedidoAdaptacao,
@@ -576,7 +577,16 @@ function filtrarOmissoes(v: VerificacaoFactual): VerificacaoFactual {
   const relevantes = v.divergencias
     .map((d) => d.trim())
     .filter(
-      (d) => d.length > 0 && !ehQueixaDeOmissao(d) && !ehRuidoDeTraducao(d),
+      (d) =>
+        d.length > 0 &&
+        !ehQueixaDeOmissao(d) &&
+        !ehRuidoDeTraducao(d) &&
+        // Filtro ESTRUTURAL: compara números, datas e nomes próprios dos dois
+        // trechos citados. Pega o que `ehRuidoDeTraducao` não alcança, porque
+        // aquele depende de o checador se explicar ("formato de data") e a
+        // maioria das divergências só justapõe `"A" — o original dizia "B"`.
+        // Medido: 34 de 55 tentativas do dia reprovadas, quase todas assim.
+        !ehRuidoEstrutural(d),
     );
 
   return {
