@@ -78,6 +78,10 @@ export default function RootLayout({
           // Conteúdo estático definido em build. Não há entrada de usuário aqui.
           dangerouslySetInnerHTML={{ __html: SCRIPT_TEMA }}
         />
+        <script id="aclib" type="text/javascript" src="//acscdn.com/script/aclib.js" />
+        <script type="text/javascript">
+          {`aclib.runAutoTag({ zoneId: 'pcewqvqovo' });`}
+        </script>
       </head>
       {/* O corte lateral vive no <html> (globals.css), não aqui: `overflow-x`
           no <body> propaga para a viewport e a torna contêiner de rolagem. */}
