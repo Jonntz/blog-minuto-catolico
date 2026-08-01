@@ -713,6 +713,107 @@ com `llama70b` nas duas pontas. Os modelos assimétricos
 A cota voltou a esgotar (4006 a partir de 23:50 UTC) — agora por consumo real,
 não pelo bug. Comportamento esperado do free tier.
 
+## 5d. Correções de frontend + arquivo paginado + institucionais (01/08)
+
+Quatro pedidos do usuário. Um deles descobriu um bug de CSS que afetava o site
+inteiro e ninguém tinha notado.
+
+### 🔴 `globals.css` estava FORA DE CAMADA — utilitário de cor não pintava link
+
+O achado mais importante do dia, e não estava na lista de pedidos. O chip ativo
+do arquivo novo saiu **branco sobre branco**. Causa: as regras de elemento do
+`globals.css` (`a`, `body`, `body *`, `html`…) estavam fora de qualquer
+`@layer`. Em CSS, **declaração sem camada vence declaração em camada,
+independentemente de especificidade** — e todo utilitário do Tailwind 4 vive em
+`@layer utilities`.
+
+Consequências que estavam no ar sem ninguém ver:
+
+- `a { color: var(--ink) }` anulava **todo `text-*` em link do site**.
+  `text-ink-2` no rodapé e na navegação e `text-blue-f` do "Ler o original" da
+  matéria nunca pintaram nada — tudo saía na cor padrão do texto.
+- `body * { transition: … 0.35s }` sobrescrevia **todos** os
+  `transition-*`/`duration-*`/`ease-dc` do projeto.
+
+Conserto: envolver as regras base em `@layer base`. Medido antes/depois no chip
+ativo — `color` era idêntico ao `background-color` (lab 95.96 nos dois), passou
+a lab 3.35 sobre lab 95.96.
+
+**Efeito colateral desejado:** links pelo site passaram a respeitar as cores do
+design. Não é regressão, é o design finalmente valendo.
+
+### Rolagem lateral na matéria (celular)
+
+Reproduzido a 360px: **288px de excesso**. Culpado medido: `<span>` de 632px no
+corpo — URL do `vatican.va` e identificador sem espaço. `ArticleBody` não tinha
+quebra de palavra.
+
+- `break-words` no corpo, no dek, na legenda da foto e no bloco de fonte.
+- `overflow-x: clip` no `<html>` como REDE (não como conserto), substituindo o
+  `overflow-x-hidden` que estava no `<body>`.
+
+⚠️ **A troca quebrou a trava de rolagem do menu.** `overflow` do `<body>` só
+propaga para a viewport enquanto o `<html>` é `visible`; com `clip` no `<html>`,
+travar o `<body>` deixou de travar coisa alguma. A trava do `MobileMenu` foi
+para o `document.documentElement`.
+
+### 🔴 Menu de celular não abria — `backdrop-filter` cria bloco contentor
+
+O painel morava dentro do `<header>`, cujo filho tem `backdrop-blur-xl`.
+`backdrop-filter` (como `transform`, `filter` e `perspective`) **faz do elemento
+bloco contentor de descendentes `position: fixed`**. O `top-[57px] bottom-0` do
+painel passava a ser relativo a uma faixa de 54px → altura negativa → painel com
+zero pixel.
+
+Conserto: `createPortal` para `document.body`. Medido depois: painel 390x787px,
+recebendo clique. De quebra, o `-translate-y-full` que esconde o header ao rolar
+não arrasta mais o menu junto.
+
+Custo aceito: o painel deixou de sair no HTML do servidor. Não custa indexação —
+os mesmos links já estão no `<nav>` de desktop e no rodapé.
+
+### Capa deixou de carregar o acervo inteiro
+
+A capa lia 30 matérias e mandava **todas** para o HTML, porque a régua de temas
+filtra com `hidden` em vez de refazer a consulta. Agora lê 12
+(`listarPaginado`), e o acervo vive em `/noticias`.
+
+`/noticias` tem filtro por editoria e paginação **na URL**
+(`?categoria=…&pagina=…`), com `<Link>` e não estado de cliente: endereçável,
+volta com o botão do navegador, rastreável, e lê só uma página do banco.
+`rotaArquivo()` omite `pagina=1` e categoria vazia para não gerar duas URLs
+para a mesma listagem.
+
+### Institucionais
+
+`/sobre`, `/politica-editorial`, `/privacidade`, `/termos`, `/contato`.
+Ligadas no rodapé e no sitemap.
+
+⚠️ **`src/lib/institucional.ts` tem campos `PENDENTE` em `null`** — e-mail de
+contato, entidade responsável, localidade. Enquanto forem `null`, as páginas
+exibem um aviso em vez de um dado inventado. **Publicar e-mail falso numa
+política de LGPD cria obrigação sobre um canal que não existe**, e o art. 18
+exige que o canal do titular funcione. Preencher antes de divulgar o site.
+
+### Verificado
+
+Chrome headless via CDP, 390px (mobile) e 1280px, contra `next dev` com 43
+artigos semeados — inclusive um adversarial com URL longa e token sem espaço:
+
+- 8 rotas sem arrasto lateral (o teste **arrasta** com `scrollTo`, não só mede
+  `scrollWidth` — com `overflow` clipado o `scrollWidth` mente)
+- menu abre, fica em `<body>`, trava e destrava o fundo, leva ao arquivo
+- arquivo: 12 cards/página, `rel="next"`/`prev`, `aria-current`, filtro por
+  editoria devolvendo só a editoria pedida
+- 5 institucionais renderizando com 300–760 palavras cada
+- `tsc --noEmit` limpo, `cf:build` completo
+
+**Armadilha do ambiente de teste (custou uma rodada):** `next dev` **bloqueia
+recursos de dev vindos de `127.0.0.1`** ("Blocked cross-origin request to
+Next.js dev resource"). Nada hidratava e o menu parecia quebrado. Usar
+`localhost`. E `wrangler dev --local` trava depois de algumas dezenas de
+requisições ("Worker's code had hung") — isso é anterior a estas mudanças.
+
 ## 5c. 🔴 SITE INTEIRO FORA DO AR — stream de RSC fatiado em 4096 bytes (31/07)
 
 Sintoma reportado: toda página exibia lixo de texto no topo e, abaixo,

@@ -3,8 +3,11 @@ import { connection } from "next/server";
 import { CATEGORIAS } from "@/lib/categories";
 import {
   listarArtigosPublicados,
+  PAGINAS_INSTITUCIONAIS,
+  ROTA_ARQUIVO,
   rotaArtigo,
   rotaCategoria,
+  rotaInstitucional,
   getSiteUrl,
 } from "@/lib/seo";
 
@@ -63,7 +66,31 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.8,
   }));
 
-  return [home, ...categorias, ...paginas];
+  // Só a primeira página do arquivo entra. As seguintes são alcançáveis pelos
+  // links `rel="next"`/`rel="prev"` da paginação — anunciar cada página no
+  // sitemap gastaria orçamento de rastreamento com listagens que mudam de
+  // conteúdo a cada publicação nova.
+  const arquivo: MetadataRoute.Sitemap = [
+    {
+      url: `${base}${ROTA_ARQUIVO}`,
+      lastModified: maisRecente ? new Date(maisRecente * 1000) : new Date(),
+      changeFrequency: "hourly",
+      priority: 0.9,
+    },
+  ];
+
+  // Institucionais são estáticas e raramente mudam, mas PRECISAM ser
+  // indexáveis: "Sobre", "Política editorial" e "Privacidade" são o que o
+  // Google lê como sinal de transparência de um portal de notícias.
+  const institucionais: MetadataRoute.Sitemap = PAGINAS_INSTITUCIONAIS.map(
+    (p) => ({
+      url: `${base}${rotaInstitucional(p.slug)}`,
+      changeFrequency: "yearly",
+      priority: 0.3,
+    }),
+  );
+
+  return [home, ...arquivo, ...categorias, ...institucionais, ...paginas];
 }
 
 function ultimaAtualizacaoDaCategoria(

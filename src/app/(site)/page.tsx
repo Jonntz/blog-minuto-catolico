@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { ArticleCard } from "@/components/article/article-card";
@@ -20,9 +21,11 @@ import { Reveal } from "@/components/ui/reveal";
 import {
   buscarEditorial,
   listarDestaquesDaSemana,
+  listarPaginado,
   listarPublicados,
 } from "@/lib/articles";
 import { CATEGORIAS, classesTom } from "@/lib/categories";
+import { ROTA_ARQUIVO } from "@/lib/seo";
 
 /**
  * Capa.
@@ -176,9 +179,19 @@ function DestaquesSkeleton() {
   );
 }
 
+/**
+ * Quanto a capa carrega além dos 3 destaques.
+ *
+ * Era 30 — e as 27 iam TODAS para o HTML, porque a régua de temas filtra com
+ * `hidden` em vez de refazer a consulta. A capa pagava download e parse do
+ * acervo quase inteiro para exibir um terço dele. O acervo agora vive em
+ * `/noticias`, com paginação de verdade; aqui fica só a primeira dobra.
+ */
+const NA_CAPA = 12;
+
 async function Ultimas() {
   await connection();
-  const artigos = await listarPublicados(30);
+  const { artigos, total } = await listarPaginado({ porPagina: NA_CAPA });
   const doFiltro = artigos.slice(3);
   if (doFiltro.length === 0) return null;
 
@@ -208,9 +221,28 @@ async function Ultimas() {
           id="ultimas"
           sobrancelha="Editorias"
           titulo="Últimas notícias"
-          contador={`${itens.length} ${itens.length === 1 ? "matéria" : "matérias"}`}
+          href={ROTA_ARQUIVO}
+          rotuloDoLink="Ver todas"
         />
         <TopicFilter chips={chips} itens={itens} className="mt-6" />
+
+        {/* O link do cabeçalho resolve para quem lê de cima para baixo; este
+            botão resolve para quem chegou ao fim da lista, que é onde a
+            vontade de "ver mais" realmente aparece. */}
+        <div className="mt-10 flex flex-col items-center gap-2">
+          <Link
+            href={ROTA_ARQUIVO}
+            className="inline-flex min-h-11 touch-manipulation items-center rounded-full border border-line bg-surface px-6 text-[14px] font-medium text-ink transition-colors duration-200 ease-dc hover:border-blue-f hover:text-blue-f"
+          >
+            Ver todas as notícias
+            <span aria-hidden="true" className="ml-2">
+              →
+            </span>
+          </Link>
+          <p className="text-[13px] text-ink-3">
+            {total} {total === 1 ? "matéria publicada" : "matérias publicadas"}
+          </p>
+        </div>
       </Reveal>
     </Container>
   );

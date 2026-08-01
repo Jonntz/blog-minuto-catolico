@@ -92,7 +92,12 @@ export function ArticleBody({ markdown }: { markdown: string }) {
     // A serifada no corpo é a razão de a Newsreader estar carregada: título em
     // grotesca, texto longo em serifada — a divisão clássica de jornal, e a que
     // segura melhor 800 palavras seguidas.
-    <div className="font-serif text-[18px] leading-[1.68] text-ink sm:text-[19px]">
+    //
+    // `break-words` NÃO é preciosismo: o corpo adaptado cita URL do vatican.va,
+    // número de documento e nome composto sem espaço. Um único token desses tem
+    // 600px e não cabe em tela de 360px — ele furava a largura da viewport e
+    // dava rolagem lateral na página inteira. Medido: 288px de excesso a 360px.
+    <div className="font-serif text-[18px] leading-[1.68] break-words text-ink sm:text-[19px]">
       {blocos.map((b, i) => bloco(b, `b${i}`))}
     </div>
   );

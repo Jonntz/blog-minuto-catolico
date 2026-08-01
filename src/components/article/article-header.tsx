@@ -50,7 +50,7 @@ export function ArticleHeader({ artigo }: { artigo: Article }) {
       </h1>
 
       {artigo.dek ? (
-        <p className="mt-5 max-w-[62ch] text-[19px] leading-[1.5] text-ink-2 sm:text-[21px]">
+        <p className="mt-5 max-w-[62ch] text-[19px] leading-[1.5] break-words text-ink-2 sm:text-[21px]">
           {artigo.dek}
         </p>
       ) : null}
@@ -85,7 +85,7 @@ export function ArticleHeader({ artigo }: { artigo: Article }) {
           className="aspect-[16/9] rounded-[18px]"
         />
         {artigo.imageCaption || artigo.imageCredit ? (
-          <figcaption className="mt-3 flex flex-wrap gap-x-2 gap-y-1 text-[12px] leading-relaxed text-ink-3">
+          <figcaption className="mt-3 flex flex-wrap gap-x-2 gap-y-1 text-[12px] leading-relaxed break-words text-ink-3">
             {artigo.imageCaption ? <span>{artigo.imageCaption}</span> : null}
             {artigo.imageCredit ? (
               <span className="italic">{artigo.imageCredit}</span>

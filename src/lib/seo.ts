@@ -76,6 +76,46 @@ export function rotaCategoria(slug: string): string {
 }
 
 export const ROTA_HOME = "/";
+export const ROTA_ARQUIVO = "/noticias";
+
+/**
+ * URL do arquivo, omitindo o que é padrão.
+ *
+ * `/noticias` e `/noticias?pagina=1` seriam a mesma listagem em dois endereços —
+ * conteúdo duplicado para o Google e canônica ambígua. Página 1 e "todas as
+ * editorias" simplesmente não aparecem na query.
+ */
+export function rotaArquivo({
+  categoria,
+  pagina,
+}: { categoria?: string; pagina?: number } = {}): string {
+  const query = new URLSearchParams();
+  if (categoria) query.set("categoria", categoria);
+  if (pagina && pagina > 1) query.set("pagina", String(pagina));
+  const s = query.toString();
+  return s ? `${ROTA_ARQUIVO}?${s}` : ROTA_ARQUIVO;
+}
+
+/**
+ * Páginas institucionais.
+ *
+ * Ficam no contrato junto com as demais rotas porque rodapé, sitemap e a
+ * política de indexação precisam concordar sobre elas — que é exatamente o tipo
+ * de divergência que este arquivo existe para evitar.
+ */
+export const PAGINAS_INSTITUCIONAIS = [
+  { slug: "sobre", titulo: "Sobre" },
+  { slug: "politica-editorial", titulo: "Política editorial" },
+  { slug: "privacidade", titulo: "Política de Privacidade" },
+  { slug: "termos", titulo: "Termos de Uso" },
+  { slug: "contato", titulo: "Contato" },
+] as const;
+
+export type SlugInstitucional = (typeof PAGINAS_INSTITUCIONAIS)[number]["slug"];
+
+export function rotaInstitucional(slug: SlugInstitucional): string {
+  return `/${slug}`;
+}
 
 // ---------------------------------------------------------------------------
 // URLs
@@ -241,6 +281,90 @@ export async function metadataCategoria(slug: string): Promise<Metadata> {
       siteName: NOME_SITE,
       locale: LOCALE,
       title: `${rotulo} · ${NOME_SITE}`,
+      description: truncar(descricao, MAX_DESCRICAO),
+      images: [await ogPadrao()],
+    },
+    twitter: { card: "summary_large_image" },
+  };
+}
+
+/**
+ * Metadados do arquivo (`/noticias`), com e sem filtro de editoria.
+ *
+ * A canônica aponta para a própria página filtrada/paginada — não para
+ * `/noticias` cru. Canonicalizar tudo para a página 1 é o erro clássico de
+ * arquivo: o Google passa a ignorar as páginas seguintes e o acervo antigo
+ * some do índice.
+ */
+export async function metadataArquivo({
+  categoria,
+  pagina = 1,
+}: {
+  categoria?: string;
+  pagina?: number;
+} = {}): Promise<Metadata> {
+  const base = await getSiteUrl();
+  const rotulo = categoria ? getCategoria(categoria)?.label : undefined;
+
+  const titulo = rotulo
+    ? `Notícias de ${rotulo}`
+    : "Todas as notícias";
+  const comPagina = pagina > 1 ? `${titulo} — página ${pagina}` : titulo;
+
+  const descricao = rotulo
+    ? `Arquivo completo de ${rotulo} no ${NOME_SITE}, da mais recente para a mais antiga.`
+    : `Arquivo completo do ${NOME_SITE}: todas as matérias publicadas, da mais recente para a mais antiga.`;
+
+  const url = `${base}${rotaArquivo({ categoria, pagina })}`;
+
+  return {
+    metadataBase: new URL(base),
+    title: comPagina,
+    description: truncar(descricao, MAX_DESCRICAO),
+    alternates: { canonical: url },
+    openGraph: {
+      type: "website",
+      url,
+      siteName: NOME_SITE,
+      locale: LOCALE,
+      title: `${comPagina} · ${NOME_SITE}`,
+      description: truncar(descricao, MAX_DESCRICAO),
+      images: [await ogPadrao()],
+    },
+    twitter: { card: "summary_large_image" },
+  };
+}
+
+/**
+ * Metadados de uma página institucional.
+ *
+ * `follow` sem `index` seria errado aqui: política de privacidade e página
+ * "Sobre" são exatamente o tipo de sinal de transparência que o E-E-A-T do
+ * Google procura num portal de notícias. Elas DEVEM ser indexadas.
+ */
+export async function metadataInstitucional({
+  slug,
+  titulo,
+  descricao,
+}: {
+  slug: SlugInstitucional;
+  titulo: string;
+  descricao: string;
+}): Promise<Metadata> {
+  const base = await getSiteUrl();
+  const url = `${base}${rotaInstitucional(slug)}`;
+
+  return {
+    metadataBase: new URL(base),
+    title: titulo,
+    description: truncar(descricao, MAX_DESCRICAO),
+    alternates: { canonical: url },
+    openGraph: {
+      type: "website",
+      url,
+      siteName: NOME_SITE,
+      locale: LOCALE,
+      title: `${titulo} · ${NOME_SITE}`,
       description: truncar(descricao, MAX_DESCRICAO),
       images: [await ogPadrao()],
     },

@@ -79,7 +79,9 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: SCRIPT_TEMA }}
         />
       </head>
-      <body className="min-h-screen overflow-x-hidden bg-bg text-ink">
+      {/* O corte lateral vive no <html> (globals.css), não aqui: `overflow-x`
+          no <body> propaga para a viewport e a torna contêiner de rolagem. */}
+      <body className="min-h-screen bg-bg text-ink">
         {children}
       </body>
     </html>

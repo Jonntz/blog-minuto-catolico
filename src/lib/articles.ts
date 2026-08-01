@@ -54,6 +54,86 @@ export async function listarPublicados(limite = 30): Promise<Article[]> {
     .limit(limite);
 }
 
+/**
+ * Uma página do acervo, com o total necessário para desenhar o paginador.
+ *
+ * `total` é COUNT no banco, não `artigos.length`: sem ele a página não sabe se
+ * existe uma próxima, e paginador que só descobre o fim ao chegar nele é uma
+ * armadilha para quem navega por teclado ou por link direto.
+ */
+export interface PaginaDeArtigos {
+  artigos: Article[];
+  /** Total de publicados que casam com o filtro. */
+  total: number;
+  /** Página atual, 1-based e já saneada. */
+  pagina: number;
+  totalDePaginas: number;
+}
+
+/** Teto de itens por página. Impede `?porPagina=100000` virar varredura. */
+const MAX_POR_PAGINA = 48;
+
+export interface OpcoesDePaginacao {
+  pagina?: number;
+  porPagina?: number;
+  /** Slug de categoria. `undefined` = acervo inteiro. */
+  categoria?: string;
+}
+
+/**
+ * Listagem paginada do acervo publicado.
+ *
+ * Existe porque a capa lia 30 matérias de uma vez e mandava todas para o
+ * cliente — a régua de temas filtrava com `hidden`, então o HTML carregava o
+ * acervo inteiro para mostrar um terço dele. Com o volume de publicação diária
+ * isso só piora, e é custo direto de LCP (CLAUDE.md §1).
+ *
+ * Cacheável por (categoria, página, tamanho): ao contrário da busca por termo
+ * livre, o espaço de chaves aqui é pequeno e limitado, então não há risco de
+ * encher o cache com entradas de uso único.
+ */
+export async function listarPaginado(
+  opcoes: OpcoesDePaginacao = {},
+): Promise<PaginaDeArtigos> {
+  "use cache";
+  cacheLife("homeFeed");
+  cacheTag(
+    opcoes.categoria ? TAGS.categoria(opcoes.categoria) : TAGS.feedHome,
+  );
+
+  const porPagina = Math.min(
+    Math.max(1, Math.trunc(opcoes.porPagina ?? 12)),
+    MAX_POR_PAGINA,
+  );
+  const pedida = Math.max(1, Math.trunc(opcoes.pagina ?? 1));
+
+  const filtro = opcoes.categoria
+    ? and(PUBLICADO, eq(articles.categorySlug, opcoes.categoria))
+    : PUBLICADO;
+
+  const db = await getDb();
+
+  const [{ total }] = await db
+    .select({ total: sql<number>`count(*)` })
+    .from(articles)
+    .where(filtro);
+
+  const totalDePaginas = Math.max(1, Math.ceil(total / porPagina));
+  // Página além do fim volta para a última em vez de devolver lista vazia:
+  // link velho compartilhado no WhatsApp continua levando a algum lugar útil.
+  const pagina = Math.min(pedida, totalDePaginas);
+
+  const artigos = await db
+    .select()
+    .from(articles)
+    .where(filtro)
+    .orderBy(desc(articles.publishedAt))
+    .limit(porPagina)
+    .offset((pagina - 1) * porPagina);
+
+  return { artigos, total, pagina, totalDePaginas };
+}
+
 export async function buscarPorSlug(slug: string): Promise<Article | undefined> {
   "use cache";
   cacheLife("article");

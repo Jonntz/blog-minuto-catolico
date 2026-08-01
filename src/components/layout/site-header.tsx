@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { Container } from "@/components/ui/container";
 import { HeaderShell } from "./header-shell";
 import { MobileMenu } from "./mobile-menu";
-import { itensDaNavegacao } from "./nav";
+import { itensDaNavegacao, itensDoMenuDeCelular } from "./nav";
 import { SiteSearch } from "./site-search";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -82,6 +82,6 @@ async function NavPrincipal() {
 }
 
 async function MenuDeCelular() {
-  const itens = await itensDaNavegacao();
+  const itens = await itensDoMenuDeCelular();
   return <MobileMenu itens={itens} />;
 }

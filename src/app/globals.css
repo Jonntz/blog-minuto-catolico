@@ -107,7 +107,26 @@
 
 /* ==========================================================================
    Base
+
+   TUDO daqui para baixo vive em `@layer base`, e isso NÃO é organização: é
+   correção de bug.
+
+   Estas regras estavam fora de camada. Em CSS, declaração sem camada vence
+   qualquer declaração em camada, independentemente de especificidade — e os
+   utilitários do Tailwind 4 vivem em `@layer utilities`. Resultado: o
+   `a { color: var(--ink) }` abaixo anulava TODO `text-*` aplicado a link no
+   site inteiro. Na prática, `text-ink-2` no rodapé e na navegação, e
+   `text-blue-f` no "Ler o original" da matéria, nunca chegaram a pintar nada;
+   o chip ativo do arquivo saía branco sobre branco, ilegível.
+
+   O mesmo valia para `body *`, que sobrescrevia cada `transition-*`/`duration-*`
+   do projeto com 0.35s.
+
+   Com as regras em `base`, os utilitários voltam a vencer — que é o que o
+   design sempre pediu.
    ========================================================================== */
+
+@layer base {
 
 *,
 *::before,
@@ -120,6 +139,16 @@ html {
   /* Compensa o header fixo de 54px + a barra de progresso. */
   scroll-padding-top: 74px;
   -webkit-text-size-adjust: 100%;
+
+  /* Rede contra rolagem lateral, no <html> e com `clip` — não `hidden`.
+     `hidden` transformaria a caixa num contêiner de rolagem (o conteúdo
+     continuaria arrastável lateralmente, só sem barra) e mudaria a referência
+     do `position: sticky` da coluna litúrgica da capa. `clip` corta e pronto.
+     Está dentro do baseline do Tailwind 4 (Safari 16.4+).
+
+     É REDE, não conserto: quem estoura a largura tem de ser corrigido na
+     origem — foi o que se fez com `break-words` no corpo da matéria. */
+  overflow-x: clip;
 }
 
 body {
@@ -171,6 +200,8 @@ textarea {
   border-radius: 4px;
 }
 
+} /* fim de @layer base */
+
 /* ==========================================================================
    Movimento
    ========================================================================== */
@@ -188,12 +219,18 @@ textarea {
 
 /* A transição global de cor do design (`body *`) é o que faz a troca de tema
    parecer suave. Mantida, mas restrita às propriedades de cor — aplicar em
-   `all` causaria repaints caros e prejudicaria o INP. */
-body * {
-  transition:
-    background-color 0.35s ease,
-    color 0.35s ease,
-    border-color 0.35s ease;
+   `all` causaria repaints caros e prejudicaria o INP.
+
+   Em `@layer base` para que um `transition-colors duration-200` de componente
+   ganhe dela. Fora de camada, esta regra sobrescrevia todas as durações
+   declaradas no projeto. */
+@layer base {
+  body * {
+    transition:
+      background-color 0.35s ease,
+      color 0.35s ease,
+      border-color 0.35s ease;
+  }
 }
 
 /* O design anima sem checar preferência de movimento reduzido. Corrigido:

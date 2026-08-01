@@ -25,7 +25,10 @@ export function SourceNote({ artigo }: { artigo: Article }) {
         Fonte
       </h2>
 
-      <p className="mt-3 text-[15px] leading-[1.6] text-ink-2">
+      {/* `break-words` nos dois parágrafos: `sourceName` e `sourceTitle` são
+          texto de terceiro e já chegaram com token sem espaço. Sem isto, o
+          bloco de proveniência fura a largura no celular. */}
+      <p className="mt-3 text-[15px] leading-[1.6] break-words text-ink-2">
         Matéria adaptada em português a partir de{" "}
         <span className="font-medium text-ink">{artigo.sourceName}</span>
         {artigo.sourceAuthor ? `, de ${artigo.sourceAuthor}` : ""}. O texto foi
@@ -37,9 +40,9 @@ export function SourceNote({ artigo }: { artigo: Article }) {
           href={artigo.sourceUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 text-[14px] font-medium text-blue-f"
+          className="inline-flex items-center gap-2 text-[14px] font-medium break-words text-blue-f"
         >
-          <span>
+          <span className="min-w-0">
             Ler o original: <span className="italic">{artigo.sourceTitle}</span>
           </span>
           <svg
