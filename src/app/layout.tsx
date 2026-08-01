@@ -82,6 +82,10 @@ export default function RootLayout({
         <script type="text/javascript">
           {`aclib.runAutoTag({ zoneId: 'pcewqvqovo' });`}
         </script>
+
+        <script type="text/javascript">
+          {`aclib.runAutoTag({ zoneId: 'xlwsd0rw7w' });`}
+        </script>
       </head>
       {/* O corte lateral vive no <html> (globals.css), não aqui: `overflow-x`
           no <body> propaga para a viewport e a torna contêiner de rolagem. */}
