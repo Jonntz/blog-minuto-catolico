@@ -604,8 +604,16 @@ async function processarItem(
       // item volta a ser o primeiro da fila na execução seguinte, e trava tudo.
       await gravar(db, linha.id, {
         status: "draft",
-        // Item adiado não tem erro de validação: ele não chegou a ser julgado.
-        validationErrors: null,
+        /**
+         * Diagnóstico do ADIAMENTO, não reprovação.
+         *
+         * A linha continua `draft` e nada disto aparece no site (o portal
+         * filtra por `status = 'published'`). Está aqui porque diagnosticar um
+         * adiamento exigia capturar `wrangler tail` no exato instante da falha
+         * — tentado em 03/08 e o tail não capturou nada. Gravar o motivo torna
+         * a consulta ao D1 suficiente, dias depois.
+         */
+        validationErrors: [`adiado/${erro.tipo}: ${erro.mensagem}`],
         providerUsed: provider.nome,
         modelUsed: provider.modelo,
         tokensIn,
