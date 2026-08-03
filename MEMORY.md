@@ -193,8 +193,16 @@ em `draft` até o reset das 00:00 UTC. Era essa a causa do relato do usuário de
   provider envia é aceito; sem header → **401**, chave inválida → **403**. Os
   dois viram `desativado`, que aborta o lote com mensagem acionável em vez de
   queimar a fila item a item.
-- **Segredo:** `wrangler secret put NVIDIA_API_KEY`. `src/lib/env.ts` exige a chave
-  quando `TRANSLATION_PROVIDER=nvidia` e falha alto na subida do lote.
+- **Segredo:** `wrangler secret put NVIDIA_API_KEY`. Quem exige a chave é
+  `criarProviderNvidia()`, que falha alto na subida do lote.
+- **🔴 ARMADILHA JÁ PAGA (03/08) — não repetir:** a exigência da chave chegou a
+  ser posta como checagem cruzada em `getValidatedEnv()` (`src/lib/env.ts`).
+  **Derrubou `/api/cron/liturgy` com 500.** Motivo: `getValidatedEnv()` é usada
+  por `getUserAgent()`, que a ingestão de notícias E a raspagem do calendário
+  chamam — nenhuma das duas usa modelo. Um segredo do tradutor passou a derrubar
+  o calendário de 1962, que é conteúdo próprio e não depende de IA. Regra:
+  **validação global confere só o que é global**; exigência de credencial mora
+  onde a credencial é usada. Pego testando a rota em produção, não pelo build.
 - **Volta atrás:** `TRANSLATION_PROVIDER=workersAi` no `wrangler.jsonc`. O binding
   `AI` continua declarado exatamente por isso.
 

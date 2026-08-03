@@ -56,9 +56,12 @@ const esquemaEnv = z.object({
    * Chave da API da NVIDIA (`nvapi-...`), gratuita pelo NVIDIA Developer
    * Program em https://build.nvidia.com.
    *
-   * É SEGREDO: `wrangler secret put NVIDIA_API_KEY`, nunca em `vars`. Opcional
-   * no schema porque quem roda com `TRANSLATION_PROVIDER=workersAi` não
-   * precisa dela — a obrigatoriedade condicional está no `superRefine` abaixo.
+   * É SEGREDO: `wrangler secret put NVIDIA_API_KEY`, nunca em `vars`.
+   *
+   * Opcional AQUI de propósito, e a obrigatoriedade NÃO deve voltar para este
+   * arquivo — ver o aviso em `getValidatedEnv()`. Quem exige a chave é
+   * `criarProviderNvidia()`, que só roda quando alguém de fato vai chamar o
+   * modelo.
    */
   NVIDIA_API_KEY: z.string().min(1).optional(),
 
@@ -151,24 +154,22 @@ export async function getValidatedEnv(): Promise<Env> {
   }
 
   /**
-   * Checagem cruzada, fora do schema de propósito.
+   * ⚠️ NÃO acrescentar aqui a regra "TRANSLATION_PROVIDER=nvidia exige
+   * NVIDIA_API_KEY". Já foi tentado em 03/08/2026 e derrubou o que não devia.
    *
-   * Um `superRefine` no `z.object` o transformaria em `ZodEffects` e `.shape`
-   * deixaria de existir — e `getSiteUrlSync()` depende de `.shape.SITE_URL`
-   * para validar a URL sem tocar no binding do Worker. Mais simples deixar a
-   * regra condicional aqui, onde ela também rende uma mensagem acionável.
+   * Esta função é usada por `getUserAgent()`, que a ingestão de notícias E a
+   * raspagem do calendário litúrgico chamam. Nenhuma das duas usa modelo de
+   * linguagem. Com a checagem aqui, a falta de UMA chave de IA fazia
+   * `/api/cron/liturgy` devolver 500 — ou seja, um segredo do tradutor
+   * derrubava o calendário de 1962, que é conteúdo próprio e não depende de
+   * IA nenhuma.
+   *
+   * O lugar certo dessa validação é onde o provider é construído
+   * (`criarProviderNvidia`, em `services/translation/nvidia.ts`): ela falha
+   * alto, com mensagem acionável, e atinge SÓ quem precisa do modelo.
+   * Validação global deve conferir o que é global.
    */
-  const dados = resultado.data;
-  if (dados.TRANSLATION_PROVIDER === "nvidia" && !dados.NVIDIA_API_KEY) {
-    throw new Error(
-      "TRANSLATION_PROVIDER=nvidia exige o segredo NVIDIA_API_KEY.\n" +
-        "  1. Pegue uma chave gratuita em https://build.nvidia.com (NVIDIA Developer Program).\n" +
-        "  2. wrangler secret put NVIDIA_API_KEY\n" +
-        "  3. Em desenvolvimento, acrescente NVIDIA_API_KEY=nvapi-... ao .dev.vars",
-    );
-  }
-
-  cache = dados;
+  cache = resultado.data;
   return cache;
 }
 
