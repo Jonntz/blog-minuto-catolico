@@ -21,6 +21,7 @@ export {
   LIMITE_MAXIMO_LOTE,
   LIMITE_PADRAO_LOTE,
   MAX_FALHAS_CONSECUTIVAS,
+  MAX_TENTATIVAS_TAMANHO,
   type EnvAdaptacao,
   type EventoAdaptacao,
   type OpcoesAdaptacao,
@@ -28,8 +29,10 @@ export {
 } from "./adapt";
 
 export {
+  apenasExcessoDeTamanho,
   avaliarGuardRails,
   calcularAlvoCaracteres,
+  calcularAlvoPalavras,
   contarParagrafos,
   medirIdioma,
   montarBlocoFonte,
@@ -42,6 +45,7 @@ export {
   LIMITES,
   MARCADOR_FONTE,
   MIN_CHARS_ORIGINAL,
+  REGRAS_DE_COMPRIMENTO,
   type ContextoGuardRails,
   type MedidaIdioma,
   type ResultadoGuardRails,

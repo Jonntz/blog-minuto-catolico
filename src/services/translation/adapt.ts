@@ -28,8 +28,10 @@ import { CATEGORIA_PADRAO } from "@/lib/categories";
 import { gerarSlug, slugDesambiguado } from "@/lib/slug";
 import { assertarAnthropicConfigurado } from "./anthropic";
 import {
+  apenasExcessoDeTamanho,
   avaliarGuardRails,
   calcularAlvoCaracteres,
+  contarParagrafos,
   montarCorpoFinal,
   preVoo,
   removerAtribuicaoDoModelo,
@@ -45,6 +47,8 @@ import {
   PROVIDERS,
   type ErroProvider,
   type NomeProvider,
+  type PedidoAdaptacao,
+  type RespostaAdaptacao,
   type TranslationProvider,
 } from "./provider";
 import { criarProviderWorkersAi, type EnvComAi } from "./workers-ai";
@@ -82,6 +86,15 @@ export const LIMITE_MAXIMO_LOTE = 25;
  * tempo de CPU do Worker.
  */
 export const MAX_FALHAS_CONSECUTIVAS = 3;
+
+/**
+ * Passagens pelo modelo por artigo, contando a segunda por excesso de tamanho.
+ *
+ * DOIS, não três: a segunda tentativa dobra o custo do artigo, e se o modelo
+ * ignora um alvo numérico explícito duas vezes seguidas, uma terceira não muda
+ * nada — o caminho aí é trocar de modelo, não insistir.
+ */
+export const MAX_TENTATIVAS_TAMANHO = 2;
 
 // ---------------------------------------------------------------------------
 // Env e opções
@@ -121,6 +134,7 @@ export type EventoAdaptacao =
   | { tipo: "item_pulado"; id: string; motivo: string }
   | { tipo: "item_publicado"; id: string; slug: string; tokensIn: number | null; tokensOut: number | null }
   | { tipo: "item_reprovado"; id: string; regras: string[]; erros: string[] }
+  | { tipo: "item_reescrito"; id: string; chars: number; limite: number }
   | { tipo: "item_adiado"; id: string; erro: ErroProvider }
   | { tipo: "lote_abortado"; motivo: string; restantes: number }
   | { tipo: "lote_concluido"; resumo: ResumoAdaptacao };
@@ -465,87 +479,136 @@ async function processarItem(
     return { destino: "failed_validation", tokensIn: null, tokensOut: null };
   }
 
-  // --- Adaptação -----------------------------------------------------------
-  const adaptacao = await provider.adaptar({
-    tituloOriginal: linha.sourceTitle,
-    textoOriginal,
-    comprimentoOriginal: linha.sourceLength,
-    sourceName: linha.sourceName,
-    categoriaAtual: linha.categorySlug,
-    alvoCaracteres: calcularAlvoCaracteres(textoOriginal.length),
-  });
+  const alvo = calcularAlvoCaracteres(textoOriginal.length);
 
-  if (!adaptacao.ok) {
-    return await tratarErroProvider(db, linha, provider, adaptacao.erro, agoraSeg, log);
-  }
+  let tokensIn: number | null = null;
+  let tokensOut: number | null = null;
+  let correcao: PedidoAdaptacao["correcao"];
+  let aprovado: { resposta: RespostaAdaptacao; corpoEditorial: string } | null = null;
 
-  const corpoEditorial = removerAtribuicaoDoModelo(adaptacao.valor.corpoMd);
-  let tokensIn = adaptacao.uso.tokensIn;
-  let tokensOut = adaptacao.uso.tokensOut;
-
-  // --- Verificação factual adversarial -------------------------------------
-  const verificacao = await provider.verificarFatos({
-    textoOriginal,
-    tituloOriginal: linha.sourceTitle,
-    tituloAdaptado: adaptacao.valor.titulo,
-    corpoAdaptado: corpoEditorial,
-  });
-
-  if (verificacao.ok) {
-    tokensIn = somar(tokensIn, verificacao.uso.tokensIn);
-    tokensOut = somar(tokensOut, verificacao.uso.tokensOut);
-  } else if (ehErroTransitorio(verificacao.erro)) {
-    // Cota/rede: NÃO reprova o texto por causa da nossa infraestrutura. O item
-    // volta para a fila e o próximo cron refaz — sim, pagando de novo a
-    // adaptação. É o preço de não publicar sem checagem nem queimar conteúdo
-    // bom por um erro que não é dele.
-    return await tratarErroProvider(db, linha, provider, verificacao.erro, agoraSeg, log, {
-      tokensIn,
-      tokensOut,
-    });
-  }
   /**
-   * Resposta ilegível do checador ⇒ ADIAR, não reprovar.
+   * Até DUAS passagens pelo modelo.
    *
-   * Medido nos modelos gratuitos do Workers AI: eles cumprem o formato de
-   * saída pedido apenas parte das vezes, de forma inconsistente. Tratar
-   * "sem veredito" como reprovação definitiva QUEIMAVA o artigo por uma falha
-   * de formatação do checador — chegou a zerar um lote de 8.
-   *
-   * Adiar mantém a postura fail-closed (o artigo continua `draft`, NUNCA vai
-   * ao ar sem checagem) e é recuperável: o próximo cron tenta de novo.
-   *
-   * O que NÃO se perde: os guard-rails determinísticos (números inventados,
-   * idioma, proporção, atribuição, rito de 1962, glossário) não dependem do
-   * modelo e continuariam valendo. O que se adia é só a camada semântica.
+   * A segunda só acontece quando a primeira reprovou EXCLUSIVAMENTE por
+   * tamanho, e existe por medição: em 03/08/2026, 7 das 8 reprovações do
+   * Nemotron foram de comprimento (62% a 596% do original). Escrever demais é o
+   * único defeito que pedir de novo conserta de forma confiável, porque a
+   * correção é aritmética — "você escreveu 5262, o teto é 2970" — e não
+   * julgamento. Número inventado ou divergência factual NÃO ganham segunda
+   * chance: repetir aquilo seria torcer para a validação falhar na segunda
+   * passagem. Ver `apenasExcessoDeTamanho`.
    */
-  if (!verificacao.ok) {
-    const erro: ErroProvider = {
-      tipo: "resposta_invalida",
-      mensagem:
-        "checador não produziu veredito legível — adiado para nova tentativa",
+  for (let tentativa = 1; tentativa <= MAX_TENTATIVAS_TAMANHO; tentativa++) {
+    // --- Adaptação ---------------------------------------------------------
+    const adaptacao = await provider.adaptar({
+      tituloOriginal: linha.sourceTitle,
+      textoOriginal,
+      comprimentoOriginal: linha.sourceLength,
+      sourceName: linha.sourceName,
+      categoriaAtual: linha.categorySlug,
+      alvoCaracteres: alvo,
+      correcao,
+    });
+
+    if (!adaptacao.ok) {
+      return await tratarErroProvider(db, linha, provider, adaptacao.erro, agoraSeg, log, {
+        tokensIn,
+        tokensOut,
+      });
+    }
+
+    const corpoEditorial = removerAtribuicaoDoModelo(adaptacao.valor.corpoMd);
+    tokensIn = somar(tokensIn, adaptacao.uso.tokensIn);
+    tokensOut = somar(tokensOut, adaptacao.uso.tokensOut);
+
+    // --- Verificação factual adversarial -----------------------------------
+    const verificacao = await provider.verificarFatos({
+      textoOriginal,
+      tituloOriginal: linha.sourceTitle,
+      tituloAdaptado: adaptacao.valor.titulo,
+      corpoAdaptado: corpoEditorial,
+    });
+
+    if (verificacao.ok) {
+      tokensIn = somar(tokensIn, verificacao.uso.tokensIn);
+      tokensOut = somar(tokensOut, verificacao.uso.tokensOut);
+    } else if (ehErroTransitorio(verificacao.erro)) {
+      // Cota/rede: NÃO reprova o texto por causa da nossa infraestrutura. O item
+      // volta para a fila e o próximo cron refaz — sim, pagando de novo a
+      // adaptação. É o preço de não publicar sem checagem nem queimar conteúdo
+      // bom por um erro que não é dele.
+      return await tratarErroProvider(db, linha, provider, verificacao.erro, agoraSeg, log, {
+        tokensIn,
+        tokensOut,
+      });
+    }
+    /**
+     * Resposta ilegível do checador ⇒ ADIAR, não reprovar.
+     *
+     * Medido nos modelos gratuitos do Workers AI: eles cumprem o formato de
+     * saída pedido apenas parte das vezes, de forma inconsistente. Tratar
+     * "sem veredito" como reprovação definitiva QUEIMAVA o artigo por uma falha
+     * de formatação do checador — chegou a zerar um lote de 8.
+     *
+     * Adiar mantém a postura fail-closed (o artigo continua `draft`, NUNCA vai
+     * ao ar sem checagem) e é recuperável: o próximo cron tenta de novo.
+     *
+     * O que NÃO se perde: os guard-rails determinísticos (números inventados,
+     * idioma, proporção, atribuição, rito de 1962, glossário) não dependem do
+     * modelo e continuariam valendo. O que se adia é só a camada semântica.
+     */
+    if (!verificacao.ok) {
+      const erro: ErroProvider = {
+        tipo: "resposta_invalida",
+        mensagem:
+          "checador não produziu veredito legível — adiado para nova tentativa",
+      };
+      log({ tipo: "item_adiado", id: linha.id, erro });
+      return { destino: "draft", tokensIn, tokensOut, erroProvider: erro };
+    }
+
+    // --- Guard-rails -------------------------------------------------------
+    const ctx: ContextoGuardRails = {
+      fonte: linha.source,
+      sourceName: linha.sourceName,
+      sourceUrl: linha.sourceUrl,
+      comprimentoOriginal: linha.sourceLength,
+      textoOriginal,
+      corpoMd: corpoEditorial,
+      titulo: adaptacao.valor.titulo,
+      dek: adaptacao.valor.dek,
+      tags: adaptacao.valor.tags,
+      verificacao: verificacao.valor,
     };
-    log({ tipo: "item_adiado", id: linha.id, erro });
-    return { destino: "draft", tokensIn, tokensOut, erroProvider: erro };
-  }
 
-  // --- Guard-rails ---------------------------------------------------------
-  const ctx: ContextoGuardRails = {
-    fonte: linha.source,
-    sourceName: linha.sourceName,
-    sourceUrl: linha.sourceUrl,
-    comprimentoOriginal: linha.sourceLength,
-    textoOriginal,
-    corpoMd: corpoEditorial,
-    titulo: adaptacao.valor.titulo,
-    dek: adaptacao.valor.dek,
-    tags: adaptacao.valor.tags,
-    verificacao: verificacao.ok ? verificacao.valor : null,
-  };
+    const veredito = avaliarGuardRails(ctx);
 
-  const veredito = avaliarGuardRails(ctx);
+    if (veredito.aprovado) {
+      aprovado = { resposta: adaptacao.valor, corpoEditorial };
+      break;
+    }
 
-  if (!veredito.aprovado) {
+    // Só de tamanho, e ainda há tentativa sobrando ⇒ reescreve com o número na
+    // mão. O texto anterior é descartado: pedir para encurtar o próprio texto
+    // produz corte mecânico, não matéria.
+    if (
+      tentativa < MAX_TENTATIVAS_TAMANHO &&
+      apenasExcessoDeTamanho(veredito.regrasReprovadas)
+    ) {
+      correcao = {
+        charsAnteriores: corpoEditorial.length,
+        charsMaximos: alvo.max,
+        paragrafosAnteriores: contarParagrafos(corpoEditorial),
+      };
+      log({
+        tipo: "item_reescrito",
+        id: linha.id,
+        chars: corpoEditorial.length,
+        limite: alvo.max,
+      });
+      continue;
+    }
+
     await gravar(db, linha.id, {
       status: "failed_validation",
       // O texto reprovado é gravado de propósito: sem ele, diagnosticar por que
@@ -571,6 +634,15 @@ async function processarItem(
     });
     return { destino: "failed_validation", tokensIn, tokensOut };
   }
+
+  // O laço só sai por `break` (aprovado) ou por `return`. Este guarda existe
+  // para o TypeScript e como fail-closed: sem texto aprovado, não se publica.
+  if (!aprovado) {
+    return { destino: "draft", tokensIn, tokensOut };
+  }
+
+  const adaptacao = { valor: aprovado.resposta };
+  const corpoEditorial = aprovado.corpoEditorial;
 
   // --- Publicação ----------------------------------------------------------
   /**

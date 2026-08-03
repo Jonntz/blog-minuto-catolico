@@ -140,6 +140,62 @@ export function calcularAlvoCaracteres(comprimentoBase: number): {
 }
 
 /**
+ * Caracteres por palavra em prosa jornalística PT-BR, incluindo o espaço.
+ *
+ * Medido sobre as matérias já publicadas do portal. Serve para converter o alvo
+ * de caracteres num alvo de PALAVRAS.
+ */
+const CHARS_POR_PALAVRA = 6.3;
+
+/**
+ * Mesma faixa de comprimento, expressa em PALAVRAS.
+ *
+ * ## Por que isto existe
+ *
+ * Modelo de linguagem não conta caracteres — ele não enxerga caracteres, enxerga
+ * tokens. Pedir "entre 791 e 989 caracteres" é pedir uma medida que ele não tem
+ * como verificar enquanto escreve, e o resultado foi medido em produção em
+ * 03/08/2026: das 8 reprovações do Nemotron, **7 foram por comprimento** —
+ * 62%, 65%, 72%, 78%, 82%, 89% e uma de **596%** do original, com 84 parágrafos
+ * onde o máximo é 6.
+ *
+ * Palavra e parágrafo são unidades que o modelo controla bem, porque consegue
+ * acompanhá-las enquanto gera. O alvo em caracteres continua sendo a regra
+ * cobrada pelos guard-rails (é o que protege contra republicação); isto aqui é
+ * só a forma de PEDIR que tem chance de ser obedecida.
+ */
+export function calcularAlvoPalavras(alvo: { min: number; max: number }): {
+  min: number;
+  max: number;
+} {
+  return {
+    min: Math.round(alvo.min / CHARS_POR_PALAVRA),
+    max: Math.round(alvo.max / CHARS_POR_PALAVRA),
+  };
+}
+
+/** Regras cujo conserto é "escrever menos" — as únicas que valem nova tentativa. */
+export const REGRAS_DE_COMPRIMENTO: readonly string[] = ["comprimento", "proporcao"];
+
+/**
+ * `true` quando a reprovação foi SÓ de tamanho.
+ *
+ * É o que autoriza uma segunda tentativa em `adapt.ts`: escrever demais é o
+ * único defeito que uma instrução numérica explícita conserta de forma
+ * confiável. Número inventado, idioma errado ou divergência factual não se
+ * consertam pedindo de novo — reprocessar aquilo seria torcer para a validação
+ * falhar na segunda passagem.
+ */
+export function apenasExcessoDeTamanho(
+  regrasReprovadas: readonly string[],
+): boolean {
+  return (
+    regrasReprovadas.length > 0 &&
+    regrasReprovadas.every((r) => REGRAS_DE_COMPRIMENTO.includes(r))
+  );
+}
+
+/**
  * Hosts aceitos por fonte. O guard-rail de atribuição exige que `sourceUrl`
  * resolva para um destes — assim um link corrompido, relativo ou apontando
  * para outro domínio não vai ao ar como se fosse a fonte.

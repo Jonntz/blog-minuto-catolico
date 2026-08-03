@@ -212,7 +212,51 @@ em `draft` até o reset das 00:00 UTC. Era essa a causa do relato do usuário de
     vier 400 citando o campo, `SEM_SUPORTE_A_EXTRAS` memoriza o modelo por
     isolate e refaz a chamada sem ele — em vez de perder uma requisição por
     artigo, para sempre.
-  - **Bônus:** corta ~4x o token de saída, esticando os créditos gratuitos.
+  - **Bônus:** corta o token de saída, esticando os créditos gratuitos.
+  - **✅ CONFIRMADO EM PRODUÇÃO (03/08).** `tokens_out` caiu de **4629** para
+    **861 / 416 / 903** em três execuções — ~5x. O campo foi aceito (o latch de
+    fallback não disparou) e **a primeira matéria foi publicada pelo Nemotron**:
+    `/noticia/padre-catolico-e-morto-a-facadas-na-nigeria`. Qualidade boa —
+    4 parágrafos, registro jornalístico sóbrio, terminologia correta
+    ("sacerdote", "paróquia", "religiosos e leigos"), fatos atribuídos
+    ("segundo o comunicado da diocese") e sem decalque do inglês.
+
+### 2.6c Rendimento da fila — medido em 03/08 (o gargalo NÃO é o modelo)
+
+Consulta a `validation_errors` dos reprovados recentes. A distribuição importa
+mais que o total, porque cada causa pede uma ação diferente:
+
+| Causa | Ocorrências | Natureza |
+|---|---|---|
+| `pre_voo` (original curto demais) | 3 de 6 | **Dado**, não modelo |
+| `proporcao` (adaptado passou de 60% do original) | 2 de 6 | Aderência do modelo |
+| `verificacao_factual` (falso positivo) | 1 de 6 | Ruído do checador |
+
+- **`pre_voo` é o maior balde e o modelo não tem culpa.** `MIN_CHARS_ORIGINAL`
+  é `700 / 0.4 = 1750` caracteres, e os originais reprovados tinham 730, 1642 e
+  **49** caracteres. A causa raiz está na ingestão: o schema só guarda
+  `source_excerpt`, e **`extrairCorpoArtigo()` (`ingestion/article-body.ts`) só é
+  usado pelo Sign of the Cross** — o EWTN entra apenas com o excerpt do feed.
+  Estender a busca de corpo completo ao EWTN é o que destrava esse balde.
+- **`proporcao`:** o modelo escreve mais que o pedido. Medido: original de 1978
+  chars → o prompt pediu 791–989 → o modelo entregou **1714** (86,7%, teto 60%).
+  Outro: pedido ~770–962, entregue 1256 (65,3%). As janelas são viáveis; o
+  modelo é que não obedece o alvo de comprimento.
+- **`verificacao_factual`:** o checador apontou como divergência
+  *"O Arcebispo Sample declarou que a SSPX está 'em cisma'" — o original dizia
+  "Archbishop Sample has declared the SSPX 'in schism'"*. Isso é a tradução
+  fazendo o trabalho dela. `ehRuidoDeTraducao`/`ehRuidoEstrutural` não pegaram
+  porque "SSPX" vs "Society of Saint Pius X" conta como nome próprio diferente.
+
+### 2.6d 🐛 Link de fonte aparece como Markdown CRU na página (PRÉ-EXISTENTE)
+
+`montarCorpoFinal()` acrescenta `Fonte: [Nome](URL)` ao `body_md`, mas
+`components/article/article-body.tsx` não renderiza link de Markdown — então a
+página mostra literalmente `[EWTN News](https://...)`. **Não é regressão da
+migração:** confirmado também em matéria publicada em 31/07, antes dela. Pior,
+é redundante: `source-note.tsx` já exibe "Fonte:" logo abaixo, com link de
+verdade. Conserto: ou renderizar link no corpo, ou parar de anexar o bloco (o
+`source-note` já cumpre o requisito de atribuição visível do `CLAUDE.md` §6).
 - **Diagnóstico de `resposta_invalida` agora vai para o banco.** As mensagens
   carregam `finish_reason`, chars brutos, chars após limpar raciocínio e um
   trecho de 180 chars — porque a causa só existia no log do Worker e chegar nela

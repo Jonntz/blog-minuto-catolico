@@ -18,7 +18,7 @@ import {
   TIPOS_NUCLEO,
 } from "./glossary";
 import { ehRuidoEstrutural } from "./divergencias";
-import { LIMITES } from "./guardrails";
+import { calcularAlvoPalavras, LIMITES } from "./guardrails";
 import type {
   PedidoAdaptacao,
   PedidoVerificacao,
@@ -86,12 +86,21 @@ export function montarSistemaAdaptacao(): string {
     "   frase e ordem de informação próprias. Tradução literal frase a frase é",
     "   republicação e será rejeitada.",
     "",
-    `2. TAMANHO: entre ${PCT_MIN}% e ${PCT_MAX}% do comprimento do original.`,
-    `   Ultrapassar ${PCT_TETO}% invalida a matéria automaticamente.`,
+    "2. TAMANHO — A REGRA MAIS VIOLADA. Sua matéria é MUITO MAIS CURTA que o",
+    "   original: um resumo jornalístico, não uma versão completa. O número",
+    "   exato de palavras vem na mensagem seguinte; obedeça-o.",
+    `   Como referência, o alvo é ${PCT_MIN}%–${PCT_MAX}% do original, e passar de`,
+    `   ${PCT_TETO}% invalida a matéria automaticamente — não por estilo, mas`,
+    "   porque acima disso deixa de ser adaptação e vira republicação.",
+    "   Na dúvida entre incluir mais um detalhe ou ficar dentro do limite,",
+    "   FIQUE DENTRO DO LIMITE.",
     "",
-    `3. ESTRUTURA: ${LIMITES.MIN_PARAGRAFOS} a 5 parágrafos. Registro`,
-    "   jornalístico sóbrio, informativo, sem adjetivação devocional excessiva",
-    "   e sem pregação. Você informa; não exorta.",
+    `3. ESTRUTURA: no MÁXIMO ${LIMITES.MAX_PARAGRAFOS} parágrafos — o ideal são`,
+    `   ${LIMITES.MIN_PARAGRAFOS} a 5. Registro jornalístico sóbrio, informativo,`,
+    "   sem adjetivação devocional excessiva e sem pregação. Você informa; não",
+    "   exorta. Não reproduza a estrutura parágrafo a parágrafo do original:",
+    "   várias informações dele devem caber numa frase sua, e muitas devem",
+    "   simplesmente ficar de fora.",
     "",
     "4. NUNCA INVENTE. Se o original não afirma, você não afirma. Isso vale",
     "   para número, data, cifra, local, cargo, nome próprio e citação. Não",
@@ -146,15 +155,31 @@ export function montarSistemaAdaptacao(): string {
     "CORPO:",
     "<o corpo em Markdown; parágrafos separados por linha em branco;",
     "sem títulos, sem listas, sem links. Vai até o fim da resposta.>",
+    "",
+    // Repetido no FIM de propósito. O limite de tamanho estava no item 2, longe
+    // do ponto em que o modelo começa a escrever o corpo, e era a regra mais
+    // violada (7 de 8 reprovações medidas em 03/08). Instrução que precisa
+    // valer DURANTE a geração tem que estar perto do começo dela.
+    `LEMBRETE FINAL: no máximo ${LIMITES.MAX_PARAGRAFOS} parágrafos, e o total de`,
+    "palavras informado na próxima mensagem. Passar disso invalida o trabalho",
+    "inteiro. Prefira cortar informação a estourar o limite.",
   ].join("\n");
 }
 
 export function montarUsuarioAdaptacao(pedido: PedidoAdaptacao): string {
+  const palavras = calcularAlvoPalavras(pedido.alvoCaracteres);
+
   return [
     `Veículo de origem: ${pedido.sourceName}`,
     `Categoria sugerida pela ingestão: ${pedido.categoriaAtual}`,
-    `Comprimento do original: ${pedido.comprimentoOriginal} caracteres.`,
-    `Comprimento alvo do seu corpo: entre ${pedido.alvoCaracteres.min} e ${pedido.alvoCaracteres.max} caracteres.`,
+    "",
+    // Em PALAVRAS primeiro, e em caixa alta: é a unidade que o modelo consegue
+    // acompanhar enquanto gera. Caractere ele não enxerga — enxerga token — e
+    // pedir em caractere produziu 7 de 8 reprovações por tamanho (03/08/2026).
+    `⚠️ ORÇAMENTO DE TEXTO: escreva entre ${palavras.min} e ${palavras.max} PALAVRAS no corpo.`,
+    `   Nunca ultrapasse ${palavras.max} palavras nem ${LIMITES.MAX_PARAGRAFOS} parágrafos.`,
+    `   (Equivale a ${pedido.alvoCaracteres.min}–${pedido.alvoCaracteres.max} caracteres; o original tem ${pedido.comprimentoOriginal}.)`,
+    ...(pedido.correcao ? [""].concat(blocoDeCorrecao(pedido.correcao, palavras.max)) : []),
     "",
     "TÍTULO ORIGINAL:",
     pedido.tituloOriginal,
@@ -162,6 +187,27 @@ export function montarUsuarioAdaptacao(pedido: PedidoAdaptacao): string {
     "TEXTO ORIGINAL:",
     pedido.textoOriginal,
   ].join("\n");
+}
+
+/**
+ * Retorno numérico da tentativa anterior.
+ *
+ * Deliberadamente concreto e sem rodeio: o modelo erra tamanho por não ter
+ * medida, não por não entender o pedido. Dizer "você escreveu X, o teto é Y"
+ * dá exatamente a medida que faltava.
+ */
+function blocoDeCorrecao(
+  correcao: NonNullable<PedidoAdaptacao["correcao"]>,
+  palavrasMax: number,
+): string[] {
+  return [
+    "🔴 SEGUNDA TENTATIVA — a anterior foi REJEITADA por tamanho.",
+    `   Você escreveu ${correcao.charsAnteriores} caracteres em ${correcao.paragrafosAnteriores} parágrafos.`,
+    `   O teto absoluto é ${correcao.charsMaximos} caracteres e ${LIMITES.MAX_PARAGRAFOS} parágrafos.`,
+    `   Escreva de novo, MUITO mais curto: no máximo ${palavrasMax} palavras.`,
+    "   Mantenha só o fato central e o essencial do contexto; corte o resto.",
+    "   Não é para resumir o seu texto anterior — é para escrever outro, enxuto.",
+  ];
 }
 
 export function montarMensagensAdaptacao(

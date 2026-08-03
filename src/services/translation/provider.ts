@@ -59,6 +59,24 @@ export interface PedidoAdaptacao {
   categoriaAtual: string;
   /** Alvo de comprimento do corpo adaptado, em caracteres. */
   alvoCaracteres: { min: number; max: number };
+
+  /**
+   * Preenchido SÓ na segunda tentativa, quando a primeira reprovou por excesso
+   * de tamanho e nada mais.
+   *
+   * Serve para dar ao modelo o retorno numérico que ele não tinha: "você
+   * escreveu 5262 caracteres, o teto é 2970". Medido em 03/08/2026, tamanho era
+   * 7 de 8 reprovações do Nemotron — e é o único defeito que pedir de novo
+   * conserta de forma confiável, porque é aritmética, não julgamento.
+   */
+  correcao?: {
+    /** Quanto a tentativa anterior escreveu, em caracteres. */
+    charsAnteriores: number;
+    /** Teto absoluto que ela estourou. */
+    charsMaximos: number;
+    /** Parágrafos da tentativa anterior. */
+    paragrafosAnteriores: number;
+  };
 }
 
 /** Original + adaptado, para a checagem factual adversarial. */

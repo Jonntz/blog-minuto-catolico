@@ -15,15 +15,63 @@ import type { ReactNode } from "react";
  * meio do corpo, o lugar de decidir isso é o prompt de adaptação, não aqui.
  */
 
-const NEGRITO_OU_ITALICO = /(\*\*[^*]+\*\*|\*[^*]+\*)/g;
+/**
+ * Link primeiro na alternância, depois negrito e itálico.
+ *
+ * O link entrou porque o corpo SEMPRE termina com um: `montarCorpoFinal()`
+ * anexa `Fonte: [Nome](URL)` a partir das colunas de proveniência. Sem tratar
+ * link aqui, a página mostrava literalmente
+ * `[EWTN News](https://www.ewtnnews.com/...)` no fim de toda matéria — em todas
+ * as 28 publicadas, verificado em 03/08/2026.
+ */
+const LINK_NEGRITO_OU_ITALICO =
+  /(\[[^\]\n]+\]\([^)\s]+\)|\*\*[^*]+\*\*|\*[^*]+\*)/g;
 
-/** Resolve `**negrito**` e `*itálico*` dentro de uma linha. */
+const RE_LINK = /^\[([^\]\n]+)\]\(([^)\s]+)\)$/;
+
+/**
+ * Só `http`/`https` viram âncora.
+ *
+ * O corpo é gerado pelo nosso provedor de adaptação, mas o texto que ele
+ * devolve é influenciado pelo artigo de terceiro que ele leu — então um
+ * `javascript:` alucinado é possível, ainda que improvável. Esquema
+ * inesperado cai no ramo de texto puro e aparece inerte, em vez de virar link
+ * executável.
+ */
+function ehUrlSegura(url: string): boolean {
+  try {
+    const p = new URL(url);
+    return p.protocol === "https:" || p.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+/** Resolve `[texto](url)`, `**negrito**` e `*itálico*` dentro de uma linha. */
 function inline(texto: string, chaveBase: string): ReactNode[] {
   return texto
-    .split(NEGRITO_OU_ITALICO)
+    .split(LINK_NEGRITO_OU_ITALICO)
     .filter((parte) => parte.length > 0)
     .map((parte, i) => {
       const chave = `${chaveBase}-${i}`;
+
+      const link = RE_LINK.exec(parte);
+      if (link?.[1] && link[2]) {
+        const [, rotulo, url] = link;
+        if (!ehUrlSegura(url)) return <span key={chave}>{rotulo}</span>;
+        return (
+          <a
+            key={chave}
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            className="text-blue-f underline decoration-from-font underline-offset-2 hover:no-underline"
+          >
+            {rotulo}
+          </a>
+        );
+      }
+
       if (parte.startsWith("**") && parte.endsWith("**")) {
         return (
           <strong key={chave} className="font-semibold">
