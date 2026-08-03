@@ -806,8 +806,11 @@ async function tratarErroProvider(
      */
     await gravar(db, linha.id, {
       status: "draft",
-      // Item adiado não tem erro de validação: ele não chegou a ser julgado.
-      validationErrors: null,
+      // Mesmo diagnóstico do outro caminho de adiamento: sem isto, um item que
+      // adia sempre é indistinguível de um que nunca foi tentado. O prefixo
+      // `adiado/` deixa claro que NÃO é reprovação — a linha segue `draft` e o
+      // site nunca a mostra.
+      validationErrors: [`adiado/${erro.tipo}: ${erro.mensagem}`],
       providerUsed: provider.nome,
       modelUsed: provider.modelo,
       tokensIn: uso.tokensIn,
