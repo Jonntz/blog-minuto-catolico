@@ -21,7 +21,7 @@
  * e o que publica é o mais estreito dos três.
  */
 
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, or } from "drizzle-orm";
 import type { Db } from "@/db";
 import { articles, type Fonte, type StatusArtigo } from "@/db/schema";
 import { CATEGORIA_PADRAO } from "@/lib/categories";
@@ -95,6 +95,27 @@ export const MAX_FALHAS_CONSECUTIVAS = 3;
  * nada — o caminho aí é trocar de modelo, não insistir.
  */
 export const MAX_TENTATIVAS_TAMANHO = 2;
+
+/**
+ * Quarentena de um item ADIADO, em segundos.
+ *
+ * ## O bug que isto conserta (medido em 03/08/2026)
+ *
+ * Quatro execuções seguidas de `limite=1` processaram **o mesmo artigo** —
+ * `tokensIn: 3791` idêntico nas quatro — e o adiaram todas as vezes. A fila
+ * tinha 96 itens e nenhum outro era tocado.
+ *
+ * A causa era a combinação de duas decisões que, isoladas, pareciam certas: a
+ * consulta ordena por `published_at DESC` (notícia nova vale mais) e o caminho
+ * de adiamento **não gravava nada**, para "não mentir dizendo que houve
+ * adaptação". Resultado: o item mais recente que sempre falha é escolhido
+ * sempre, e trava tudo atrás dele. Bloqueio de cabeça de fila clássico.
+ *
+ * 30 minutos = dois ciclos do cron de 15 min. Tempo suficiente para a fila
+ * girar, curto o bastante para um problema realmente transitório (rede, cota)
+ * ser retentado no mesmo dia.
+ */
+export const COOLDOWN_ADIAMENTO_S = 30 * 60;
 
 // ---------------------------------------------------------------------------
 // Env e opções
@@ -370,6 +391,7 @@ export async function adaptarPendentes(
   );
 
   const provider = opcoes.provider ?? escolherProvider(env);
+  const agoraSeg = agora();
 
   const resumo: ResumoAdaptacao = {
     provider: provider.nome,
@@ -403,7 +425,23 @@ export async function adaptarPendentes(
       categorySlug: articles.categorySlug,
     })
     .from(articles)
-    .where(eq(articles.status, "draft"))
+    .where(
+      and(
+        eq(articles.status, "draft"),
+        /**
+         * Pula quem foi tentado há pouco.
+         *
+         * `adapted_at` é null em rascunho nunca processado, então item novo
+         * entra na hora — a quarentena só alcança quem JÁ falhou. Sem esta
+         * cláusula, um único item que sempre adia trava a fila inteira; ver
+         * `COOLDOWN_ADIAMENTO_S`.
+         */
+        or(
+          isNull(articles.adaptedAt),
+          lt(articles.adaptedAt, agoraSeg - COOLDOWN_ADIAMENTO_S),
+        ),
+      ),
+    )
     // Notícia velha vale menos que notícia nova: se a cota acabar no meio, que
     // tenha acabado depois de publicar o que é mais recente.
     .orderBy(desc(articles.publishedAt))
@@ -560,9 +598,21 @@ async function processarItem(
     if (!verificacao.ok) {
       const erro: ErroProvider = {
         tipo: "resposta_invalida",
-        mensagem:
-          "checador não produziu veredito legível — adiado para nova tentativa",
+        mensagem: `checador não produziu veredito legível — adiado. ${verificacao.erro.mensagem}`,
       };
+      // Mesma razão do outro caminho de adiamento: sem marcar a tentativa, este
+      // item volta a ser o primeiro da fila na execução seguinte, e trava tudo.
+      await gravar(db, linha.id, {
+        status: "draft",
+        // Item adiado não tem erro de validação: ele não chegou a ser julgado.
+        validationErrors: null,
+        providerUsed: provider.nome,
+        modelUsed: provider.modelo,
+        tokensIn,
+        tokensOut,
+        adaptedAt: agoraSeg,
+        updatedAt: agoraSeg,
+      });
       log({ tipo: "item_adiado", id: linha.id, erro });
       return { destino: "draft", tokensIn, tokensOut, erroProvider: erro };
     }
@@ -733,9 +783,30 @@ async function tratarErroProvider(
   const destino = statusParaErro(erro);
 
   if (destino === "draft") {
-    // Nada é gravado: o item já está `draft` e precisa continuar exatamente
-    // como estava para o próximo cron pegá-lo. Escrever `adaptedAt` aqui
-    // mentiria dizendo que houve adaptação.
+    /**
+     * O status NÃO muda — o item continua `draft` e será reprocessado. Mas a
+     * TENTATIVA é registrada em `adapted_at`.
+     *
+     * Antes aqui não se gravava nada, com a justificativa de que `adapted_at`
+     * "mentiria dizendo que houve adaptação". A justificativa não se sustenta:
+     * o caminho de `failed_validation` logo abaixo também grava `adapted_at`
+     * sem ter havido adaptação bem-sucedida — ou seja, a coluna sempre
+     * significou "quando a adaptação rodou pela última vez", não "quando deu
+     * certo". E o custo do silêncio foi alto: sem marca, a consulta de
+     * pendentes reescolhia o mesmo item para sempre e travava a fila inteira
+     * (ver `COOLDOWN_ADIAMENTO_S`).
+     */
+    await gravar(db, linha.id, {
+      status: "draft",
+      // Item adiado não tem erro de validação: ele não chegou a ser julgado.
+      validationErrors: null,
+      providerUsed: provider.nome,
+      modelUsed: provider.modelo,
+      tokensIn: uso.tokensIn,
+      tokensOut: uso.tokensOut,
+      adaptedAt: agoraSeg,
+      updatedAt: agoraSeg,
+    });
     log({ tipo: "item_adiado", id: linha.id, erro });
     return { destino: "draft", tokensIn: uso.tokensIn, tokensOut: uso.tokensOut, erroProvider: erro };
   }

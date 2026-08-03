@@ -221,6 +221,35 @@ em `draft` até o reset das 00:00 UTC. Era essa a causa do relato do usuário de
     ("sacerdote", "paróquia", "religiosos e leigos"), fatos atribuídos
     ("segundo o comunicado da diocese") e sem decalque do inglês.
 
+### 2.6e 🔴🔴 BLOQUEIO DE CABEÇA DE FILA — o pior bug achado (03/08)
+
+**Sintoma:** 4 execuções seguidas de `limite=1` processaram **o mesmo artigo**
+(`tokensIn: 3791` idêntico nas quatro) e o adiaram todas as vezes. A fila tinha
+96 itens e nenhum outro era tocado. Explica a fila parada em ~96 apesar do cron
+rodar de 15 em 15 minutos.
+
+**Causa — duas decisões que, isoladas, pareciam certas:**
+1. A consulta de pendentes ordena por `published_at DESC` ("notícia nova vale
+   mais").
+2. O caminho de adiamento **não gravava nada**, com o comentário explícito de que
+   escrever `adapted_at` "mentiria dizendo que houve adaptação".
+
+Juntas: o item mais recente que sempre falha é reescolhido para sempre.
+
+**A justificativa do item 2 não se sustentava** — o caminho de
+`failed_validation` logo abaixo já gravava `adapted_at` sem adaptação
+bem-sucedida. A coluna sempre significou "quando a adaptação rodou pela última
+vez", não "quando deu certo".
+
+**Conserto:** os dois caminhos de adiamento gravam `adapted_at`, e a consulta
+pula quem tem `adapted_at` recente (`COOLDOWN_ADIAMENTO_S`, 30 min = 2 ciclos do
+cron). Rascunho nunca processado tem `adapted_at` null e entra na hora, então
+notícia nova não é atrasada.
+
+**Lição:** todo item de fila que pode falhar precisa registrar a TENTATIVA, não
+só o resultado. Sem isso, ordenação determinística + falha determinística = fila
+travada em silêncio.
+
 ### 2.6c Rendimento da fila — medido em 03/08 (o gargalo NÃO é o modelo)
 
 Consulta a `validation_errors` dos reprovados recentes. A distribuição importa
