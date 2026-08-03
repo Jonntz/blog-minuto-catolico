@@ -97,6 +97,16 @@ export {
 } from "./prompt";
 
 export {
+  criarProviderNvidia,
+  classificarErroHttp,
+  classificarErroRede,
+  limparRaciocinio,
+  ENDPOINT_NVIDIA,
+  MODELOS_NVIDIA,
+  type EnvNvidia,
+} from "./nvidia";
+
+export {
   criarProviderWorkersAi,
   classificarErro,
   MODELO_WORKERS_AI,

@@ -35,17 +35,27 @@ import {
   removerAtribuicaoDoModelo,
   type ContextoGuardRails,
 } from "./guardrails";
+import { criarProviderNvidia, type EnvNvidia } from "./nvidia";
 import { categoriaValida } from "./prompt";
 import {
   deveAbortarLote,
   ehErroTransitorio,
   ehNomeProvider,
   statusParaErro,
+  PROVIDERS,
   type ErroProvider,
   type NomeProvider,
   type TranslationProvider,
 } from "./provider";
 import { criarProviderWorkersAi, type EnvComAi } from "./workers-ai";
+
+/**
+ * Provider usado quando `TRANSLATION_PROVIDER` não vem definido.
+ *
+ * Só vale para teste e execução local — em produção o valor é explícito no
+ * `wrangler.jsonc`. Ver `nvidia.ts` para por que a NVIDIA virou o padrão.
+ */
+const PROVIDER_PADRAO: NomeProvider = "nvidia";
 
 // ---------------------------------------------------------------------------
 // Parâmetros do lote
@@ -79,10 +89,15 @@ export const MAX_FALHAS_CONSECUTIVAS = 3;
 
 /**
  * `TRANSLATION_PROVIDER` é declarado no `wrangler.jsonc` e validado pelo zod em
- * `src/lib/env.ts` (Fase 2). Continua opcional aqui, com default seguro, para o
- * módulo seguir testável sem env completo.
+ * `src/lib/env.ts`. Tudo aqui é opcional de propósito, para o módulo seguir
+ * testável sem env completo.
+ *
+ * `AI` deixou de ser obrigatório quando o padrão passou a ser a NVIDIA: exigir
+ * o binding do Workers AI de quem nem o usa acoplaria a adaptação a um recurso
+ * da Cloudflare que o provider padrão não toca. Quem precisa dele é
+ * `criarProviderWorkersAi`, e `escolherProvider` confere na hora de montá-lo.
  */
-export interface EnvAdaptacao extends EnvComAi {
+export interface EnvAdaptacao extends Partial<EnvComAi>, EnvNvidia {
   TRANSLATION_PROVIDER?: string;
 }
 
@@ -164,20 +179,41 @@ export function paraIngestionRun(resumo: ResumoAdaptacao): {
 // Seleção de provider
 // ---------------------------------------------------------------------------
 
+/**
+ * Monta o provider configurado.
+ *
+ * Todo caminho de erro aqui é `throw`, não `ErroProvider`. É deliberado: pedir
+ * um provider que não dá para montar é erro de CONFIGURAÇÃO, e precisa
+ * aparecer na subida do lote — não item a item, depois de já ter mexido no
+ * status de metade da fila. A rota de cron captura, grava em `ingestion_runs`
+ * com a mensagem e o health-check acusa.
+ */
 export function escolherProvider(env: EnvAdaptacao): TranslationProvider {
-  const bruto = (env.TRANSLATION_PROVIDER ?? "workersAi").trim();
+  const bruto = (env.TRANSLATION_PROVIDER ?? PROVIDER_PADRAO).trim();
 
   if (!ehNomeProvider(bruto)) {
     throw new Error(
-      `TRANSLATION_PROVIDER inválido: "${bruto}". Valores aceitos: workersAi, anthropic.`,
+      `TRANSLATION_PROVIDER inválido: "${bruto}". Valores aceitos: ${PROVIDERS.join(", ")}.`,
     );
   }
+
   if (bruto === "anthropic") {
-    // Falha alta e cedo: pedir um provider não implementado é erro de
-    // configuração, não condição de runtime a ser tolerada item a item.
     assertarAnthropicConfigurado();
   }
-  return criarProviderWorkersAi(env);
+
+  if (bruto === "workersAi") {
+    // Sem o binding não há como chamar o Workers AI. Antes isso era garantido
+    // pelo tipo (`EnvAdaptacao extends EnvComAi`); agora que `AI` é opcional,
+    // a garantia passou para cá.
+    if (!env.AI) {
+      throw new Error(
+        'TRANSLATION_PROVIDER=workersAi exige o binding "AI" no wrangler.jsonc.',
+      );
+    }
+    return criarProviderWorkersAi({ AI: env.AI });
+  }
+
+  return criarProviderNvidia(env);
 }
 
 // ---------------------------------------------------------------------------

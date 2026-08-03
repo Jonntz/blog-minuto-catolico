@@ -2,12 +2,18 @@
  * Contrato da camada de adaptação editorial.
  *
  * Existe para que trocar o modelo por trás custe uma variável de ambiente, e
- * não uma reescrita. MEMORY.md §2.6 registra o trade-off: o padrão é um modelo
- * aberto classe 8B rodando de graça no Workers AI, e um modelo desse porte
- * adaptando notícia doutrinária EN→PT-BR erra terminologia e inventa detalhe
- * mais que um modelo de fronteira. Se a qualidade não sustentar o padrão
- * editorial, `TRANSLATION_PROVIDER=anthropic` passa a ser o caminho — sem tocar
- * em `guardrails.ts`, `glossary.ts` nem `adapt.ts`.
+ * não uma reescrita. E a aposta se pagou: a migração de Workers AI para NVIDIA
+ * NIM não tocou uma vírgula de `guardrails.ts`, `glossary.ts`, `prompt.ts` nem
+ * `adapt.ts` — só entrou um arquivo novo (`nvidia.ts`) e um nome nesta lista.
+ *
+ * Providers, em ordem de preferência:
+ *   - `nvidia`    — PADRÃO. Catálogo gratuito da NVIDIA (~40 req/min por
+ *                   modelo), sem orçamento diário de compute para estourar.
+ *                   Ver `nvidia.ts` para o porquê da troca.
+ *   - `workersAi` — reserva. Continua funcionando, mas a cota de 10.000
+ *                   Neurons/dia comporta ~34 artigos contra ~75 que as fontes
+ *                   produzem, então a fila nasce represada.
+ *   - `anthropic` — stub desativado. Degrau de saída pago, nunca silencioso.
  *
  * Regra de ouro deste arquivo: NADA aqui devolve prosa livre. Toda saída do
  * modelo passa por um formato declarado e validado. Prosa livre é o que
@@ -20,7 +26,7 @@ import type { StatusArtigo } from "@/db/schema";
 // Identificação de provider
 // ---------------------------------------------------------------------------
 
-export const PROVIDERS = ["workersAi", "anthropic"] as const;
+export const PROVIDERS = ["nvidia", "workersAi", "anthropic"] as const;
 export type NomeProvider = (typeof PROVIDERS)[number];
 
 export function ehNomeProvider(v: string): v is NomeProvider {
@@ -85,9 +91,17 @@ export interface RespostaAdaptacao {
  * Veredito da checagem factual.
  *
  * ⚠️ LEIA ANTES DE CONFIAR NISTO ⚠️
- * Quem julga é o MESMO modelo fraco que escreveu o texto. Isso é uma limitação
- * estrutural, não um descuido: com Workers AI não há um segundo modelo de
- * qualidade superior disponível de graça. As mitigações implementadas são:
+ * A pergunta a fazer sempre é: quem julga é o mesmo que escreveu?
+ *
+ *   - Com `nvidia` (padrão): NÃO. A adaptação roda num Nemotron da NVIDIA e a
+ *     verificação num Llama da Meta — famílias e dados de treino diferentes.
+ *     Um verificador de outra família não herda os vícios de quem escreveu, que
+ *     é exatamente o que se quer de uma checagem adversarial. Se alguém apontar
+ *     `NVIDIA_VERIFY_MODEL` para um Nemotron, essa garantia some em silêncio.
+ *   - Com `workersAi`: SIM, e é limitação estrutural — lá não havia um segundo
+ *     modelo de qualidade equivalente disponível de graça.
+ *
+ * Em qualquer dos casos as mitigações abaixo continuam valendo:
  *
  *   1. O verificador recebe o original e o adaptado, e é instruído a assumir
  *      postura ADVERSARIAL ("procure o erro", não "confirme que está bom").

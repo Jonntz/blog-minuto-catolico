@@ -41,10 +41,41 @@ const esquemaEnv = z.object({
     .transform((v) => v === "true"),
 
   /**
-   * Provider de adaptação. `anthropic` existe como stub e falha alto se
-   * escolhido sem implementação — é degrau de saída, não opção silenciosa.
+   * Provider de adaptação.
+   *
+   * `nvidia` é o padrão: catálogo gratuito da NVIDIA, limitado por requisições
+   * por minuto em vez de um orçamento diário de compute — ver
+   * `src/services/translation/nvidia.ts`. `workersAi` fica como reserva e
+   * `anthropic` é stub que falha alto se escolhido.
    */
-  TRANSLATION_PROVIDER: z.enum(["workersAi", "anthropic"]).default("workersAi"),
+  TRANSLATION_PROVIDER: z
+    .enum(["nvidia", "workersAi", "anthropic"])
+    .default("nvidia"),
+
+  /**
+   * Chave da API da NVIDIA (`nvapi-...`), gratuita pelo NVIDIA Developer
+   * Program em https://build.nvidia.com.
+   *
+   * É SEGREDO: `wrangler secret put NVIDIA_API_KEY`, nunca em `vars`. Opcional
+   * no schema porque quem roda com `TRANSLATION_PROVIDER=workersAi` não
+   * precisa dela — a obrigatoriedade condicional está no `superRefine` abaixo.
+   */
+  NVIDIA_API_KEY: z.string().min(1).optional(),
+
+  /**
+   * Modelo da adaptação na NVIDIA. Aceita apelido de `MODELOS_NVIDIA`
+   * (`nemotronSuper`) ou id completo (`nvidia/nemotron-3-super-120b-a12b`).
+   */
+  NVIDIA_MODEL: z.string().optional(),
+
+  /**
+   * Modelo da verificação factual na NVIDIA.
+   *
+   * Deve ser de OUTRA FAMÍLIA que o de adaptação — é isso que faz a checagem
+   * ser adversarial de verdade em vez de o autor se avaliando. Ver a nota em
+   * `VerificacaoFactual` (`services/translation/provider.ts`).
+   */
+  NVIDIA_VERIFY_MODEL: z.string().optional(),
 
   /**
    * Modelo da adaptação. Aceita apelido (`llama70b`) ou id completo
@@ -119,7 +150,25 @@ export async function getValidatedEnv(): Promise<Env> {
     throw new Error(`Variáveis de ambiente inválidas:\n${problemas}`);
   }
 
-  cache = resultado.data;
+  /**
+   * Checagem cruzada, fora do schema de propósito.
+   *
+   * Um `superRefine` no `z.object` o transformaria em `ZodEffects` e `.shape`
+   * deixaria de existir — e `getSiteUrlSync()` depende de `.shape.SITE_URL`
+   * para validar a URL sem tocar no binding do Worker. Mais simples deixar a
+   * regra condicional aqui, onde ela também rende uma mensagem acionável.
+   */
+  const dados = resultado.data;
+  if (dados.TRANSLATION_PROVIDER === "nvidia" && !dados.NVIDIA_API_KEY) {
+    throw new Error(
+      "TRANSLATION_PROVIDER=nvidia exige o segredo NVIDIA_API_KEY.\n" +
+        "  1. Pegue uma chave gratuita em https://build.nvidia.com (NVIDIA Developer Program).\n" +
+        "  2. wrangler secret put NVIDIA_API_KEY\n" +
+        "  3. Em desenvolvimento, acrescente NVIDIA_API_KEY=nvapi-... ao .dev.vars",
+    );
+  }
+
+  cache = dados;
   return cache;
 }
 

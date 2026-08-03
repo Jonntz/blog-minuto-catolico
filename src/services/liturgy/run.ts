@@ -57,7 +57,33 @@ export interface ResultadoExecucao {
   avisos: string[];
   duracaoMs: number;
   erro?: string;
+
+  /**
+   * Última data que existe no banco depois desta execução (`YYYY-MM-DD`), ou
+   * `null` se a tabela estiver vazia.
+   */
+  ultimoDiaCoberto: string | null;
+
+  /**
+   * Quantos dias de calendário ainda restam a partir de hoje. Zero significa
+   * que a capa JÁ está sem liturgia; negativo, que está sem há dias.
+   *
+   * Este campo é a lição de 01/08/2026. Até então a execução só reportava
+   * "quantos dias vi e gravei" — números que ficaram ótimos no dia em que o
+   * site perdeu o painel de liturgia, porque reraspar Jan–Jul com sucesso
+   * conta como 212 dias atualizados. O que ninguém media era justamente o que
+   * importava: **até quando o calendário vai**.
+   */
+  diasDeFolga: number;
 }
+
+/**
+ * Folga abaixo da qual a execução passa a gritar no log.
+ *
+ * Com cron diário, uma semana é tempo mais que suficiente para alguém ver o
+ * aviso e agir antes de a capa ficar sem liturgia.
+ */
+export const FOLGA_MINIMA_DIAS = 7;
 
 // ---------------------------------------------------------------------------
 
@@ -90,6 +116,10 @@ export async function executarIngestaoLiturgia(
 
     const gravacao = await gravarDias(db, analise.dias, url, inicio);
 
+    // Medido DEPOIS da gravação, e sobre o banco — não sobre o que a página
+    // trouxe. É a única leitura que responde "a capa vai ficar sem liturgia?".
+    const cobertura = await medirCobertura(db, agora);
+
     const resultado: ResultadoExecucao = {
       runId,
       ok: true,
@@ -100,12 +130,20 @@ export async function executarIngestaoLiturgia(
       diasAtualizados: gravacao.atualizados,
       linhasRejeitadas: analise.rejeitadas.length,
       mesesPresentes: analise.mesesPresentes,
-      avisos: analise.avisos,
+      avisos: [...analise.avisos, ...avisosDeCobertura(cobertura)],
       duracaoMs: Date.now() - inicio,
+      ...cobertura,
     };
 
     await fecharRun(db, runId, resultado);
-    registrar("liturgia_ok", resultado);
+    // Execução tecnicamente bem-sucedida que deixa a capa sem liturgia NÃO é
+    // sucesso — vai para console.error para aparecer nos alertas.
+    registrar(
+      cobertura.diasDeFolga < FOLGA_MINIMA_DIAS
+        ? "liturgia_sem_folga"
+        : "liturgia_ok",
+      resultado,
+    );
     return resultado;
   } catch (erro) {
     const mensagem = descreverErro(erro);
@@ -122,6 +160,11 @@ export async function executarIngestaoLiturgia(
       avisos: [],
       duracaoMs: Date.now() - inicio,
       erro: mensagem,
+      // A falha pode ter sido na rede, antes de qualquer escrita — mas a
+      // cobertura que já existia no banco continua sendo a informação útil
+      // aqui ("falhou, e faltam 3 dias" é muito diferente de "falhou, e há
+      // 200 dias de folga"). Se nem isso der para ler, entra o valor neutro.
+      ...(await medirCobertura(db, agora).catch(() => COBERTURA_DESCONHECIDA)),
     };
 
     await fecharRun(db, runId, resultado).catch(() => {
@@ -231,6 +274,80 @@ async function datasJaGravadas(
 }
 
 // ---------------------------------------------------------------------------
+// Cobertura — "até quando o calendário vai"
+// ---------------------------------------------------------------------------
+
+interface Cobertura {
+  ultimoDiaCoberto: string | null;
+  diasDeFolga: number;
+}
+
+/** Tabela vazia ou ilegível. Folga zero: trata como o pior caso, não como ok. */
+const COBERTURA_DESCONHECIDA: Cobertura = {
+  ultimoDiaCoberto: null,
+  diasDeFolga: 0,
+};
+
+/**
+ * Até onde o calendário chega, contado a partir de HOJE no fuso do portal.
+ *
+ * Repare que a consulta pede o `max(date)` da tabela inteira, e não do ano
+ * corrente: no fim de dezembro a folga que importa já está no ano seguinte, e
+ * filtrar por ano faria a métrica denunciar um vazio que não existe.
+ */
+async function medirCobertura(db: Db, agora: Date): Promise<Cobertura> {
+  const [linha] = await db
+    .select({ ultimo: sql<string | null>`max(${schema.liturgicalDays.date})` })
+    .from(schema.liturgicalDays);
+
+  const ultimo = linha?.ultimo ?? null;
+  if (!ultimo) return COBERTURA_DESCONHECIDA;
+
+  return {
+    ultimoDiaCoberto: ultimo,
+    diasDeFolga: diferencaEmDias(chaveDoDiaLocal(agora), ultimo),
+  };
+}
+
+function avisosDeCobertura(c: Cobertura): string[] {
+  if (c.diasDeFolga < 0) {
+    return [
+      `CAPA SEM LITURGIA há ${Math.abs(c.diasDeFolga)} dia(s): o calendário da fonte termina em ${c.ultimoDiaCoberto}.`,
+    ];
+  }
+  if (c.diasDeFolga < FOLGA_MINIMA_DIAS) {
+    return [
+      `Folga de apenas ${c.diasDeFolga} dia(s) — o calendário da fonte termina em ${c.ultimoDiaCoberto ?? "(vazio)"}. A fonte ainda não publicou o mês seguinte.`,
+    ];
+  }
+  return [];
+}
+
+/** Data de hoje como `YYYY-MM-DD` no fuso do portal — não no do datacenter. */
+function chaveDoDiaLocal(agora: Date): string {
+  // `en-CA` porque o formato dele já é exatamente `YYYY-MM-DD`.
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: FUSO,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(agora);
+}
+
+/**
+ * Dias inteiros de `de` até `ate`, ambos `YYYY-MM-DD`.
+ *
+ * Comparadas como datas UTC puras de propósito: as duas chaves já são civis
+ * (o fuso foi aplicado ao gerá-las), então somar horário aqui só reintroduziria
+ * erro de horário de verão.
+ */
+function diferencaEmDias(de: string, ate: string): number {
+  const ms = Date.parse(`${ate}T00:00:00Z`) - Date.parse(`${de}T00:00:00Z`);
+  if (Number.isNaN(ms)) return 0;
+  return Math.round(ms / 86_400_000);
+}
+
+// ---------------------------------------------------------------------------
 // Observabilidade (CLAUDE.md §7)
 // ---------------------------------------------------------------------------
 
@@ -273,10 +390,17 @@ async function fecharRun(
     .where(eq(schema.ingestionRuns.id, runId));
 }
 
-/** Log estruturado — é o que o health-check e o `wrangler tail` leem. */
+/**
+ * Log estruturado — é o que o health-check e o `wrangler tail` leem.
+ *
+ * `liturgia_sem_folga` vai para `console.error` mesmo com `ok: true`. Não é
+ * inconsistência: raspar com sucesso um calendário que acaba depois de amanhã
+ * é exatamente o caso que ninguém percebeu em agosto/2026, e um `console.log`
+ * some no meio do ruído.
+ */
 function registrar(evento: string, resultado: ResultadoExecucao): void {
   const linha = JSON.stringify({ evento, ...resultado });
-  if (resultado.ok) console.log(linha);
+  if (resultado.ok && evento !== "liturgia_sem_folga") console.log(linha);
   else console.error(linha);
 }
 

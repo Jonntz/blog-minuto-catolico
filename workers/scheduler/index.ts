@@ -39,14 +39,26 @@ const ROTAS: Record<string, string> = {
   // por motivos diferentes (rede da fonte × cota de Neurons), e uma não deve
   // derrubar a outra.
   "5,20,35,50 * * * *": "/api/cron/adapt",
-  // Dia 1 de cada mês, 07:00 UTC (04:00 BRT): recarrega o calendário litúrgico
-  // de 1962. A página do Salve Maria cresce ao longo do ano — daí ser mensal e
-  // não anual.
-  "0 7 1 * *": "/api/cron/liturgy",
-  // Rede de segurança de virada de ano: em 1º de janeiro a página do ano novo
-  // pode ainda não estar publicada, e o disparo mensal acima voltaria de mãos
-  // vazias — deixando o site sem liturgia até fevereiro. Este repete no dia 10.
-  "0 7 10 1 *": "/api/cron/liturgy",
+  /**
+   * Todo dia às 07:00 UTC (04:00 BRT): recarrega o calendário litúrgico de 1962.
+   *
+   * ERA MENSAL (dia 1) e isso derrubou o painel de liturgia da capa em
+   * 01/08/2026. A página do Salve Maria CRESCE mês a mês: em 03/08 ela ainda
+   * tinha só 7 tabelas (Jan–Jul). O disparo do dia 1º rodou, não encontrou
+   * agosto, e o próximo só viria em 1º de setembro — ou seja, o site ficaria um
+   * mês inteiro sem liturgia por causa de um atraso de publicação de UM dia
+   * na fonte.
+   *
+   * Diário conserta isso sozinho: assim que a fonte publicar o mês, o painel
+   * volta em no máximo 24h. O custo é um GET de ~170 KB por dia, que para um
+   * WordPress é ruído estatístico — e a checagem de `robots.txt` e o UA próprio
+   * continuam valendo (CLAUDE.md §6).
+   *
+   * Isto também torna desnecessária a antiga rede de segurança de 10 de janeiro
+   * (virada de ano com a página do ano novo ainda não publicada): o disparo
+   * diário cobre esse caso e qualquer outro do mesmo tipo.
+   */
+  "0 7 * * *": "/api/cron/liturgy",
 };
 
 export default {

@@ -31,6 +31,8 @@ export const TAGS = {
   categoriasComConteudo: "categories-with-content",
   /** Um dia do calendário litúrgico. */
   liturgia: (data: string) => `liturgy-${data}`,
+  /** Até onde o calendário litúrgico vai — não depende de um dia específico. */
+  limiteDoCalendario: "liturgy-bounds",
 } as const;
 
 /** Só artigos aprovados vão ao ar. `draft` e `failed_validation` nunca. */
@@ -326,4 +328,29 @@ export async function buscarLiturgia(
     .where(eq(liturgicalDays.date, data))
     .limit(1);
   return linhas[0];
+}
+
+/**
+ * Última data que existe no calendário (`YYYY-MM-DD`), ou `undefined` se a
+ * tabela estiver vazia.
+ *
+ * Serve a UM propósito: quando não há liturgia para hoje, o painel da capa
+ * precisa dizer ATÉ QUANDO a fonte publicou, em vez de sumir sem explicação —
+ * que foi o que aconteceu em 01/08/2026. Ver `LiturgyPanel`.
+ *
+ * Tag própria, e não a da capa: esta leitura não é sobre um dia específico, e
+ * sim sobre o limite do conjunto. Reaproveitar `feedHome` misturaria perfis de
+ * `cacheLife` — `revalidate.ts` exige que o perfil passado na invalidação bata
+ * com o declarado aqui, e `feedHome` usa outro.
+ */
+export async function buscarUltimoDiaLiturgico(): Promise<string | undefined> {
+  "use cache";
+  cacheLife("liturgy");
+  cacheTag(TAGS.limiteDoCalendario);
+
+  const db = await getDb();
+  const [linha] = await db
+    .select({ ultimo: sql<string | null>`max(${liturgicalDays.date})` })
+    .from(liturgicalDays);
+  return linha?.ultimo ?? undefined;
 }

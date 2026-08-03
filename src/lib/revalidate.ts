@@ -50,6 +50,13 @@ export function invalidarLiturgia(datas: readonly string[]): void {
   for (const data of datas) {
     revalidateTag(TAGS.liturgia(data), PERFIL.liturgia);
   }
+  /**
+   * O limite do calendário muda a cada recarga que traz um mês novo, e é ele
+   * que o painel da capa lê para dizer "a fonte publicou até X" quando não há
+   * liturgia para hoje. Sem invalidar aqui, o aviso continuaria citando o mês
+   * antigo depois de a fonte já ter publicado o novo.
+   */
+  revalidateTag(TAGS.limiteDoCalendario, PERFIL.liturgia);
   // A capa mostra a liturgia do dia no painel lateral.
   revalidateTag(TAGS.feedHome, PERFIL.feedHome);
 }

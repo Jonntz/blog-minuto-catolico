@@ -11,8 +11,10 @@
     "crons": [
       "*/15 * * * *",
       "5,20,35,50 * * * *",
-      "0 7 1 * *",
-      "0 7 10 1 *"
+      // Diário, não mensal. O mensal deixou a capa sem liturgia o mês inteiro
+      // de agosto/2026 porque a fonte publicou o mês com atraso — ver a nota
+      // longa em index.ts.
+      "0 7 * * *"
     ]
   },
 

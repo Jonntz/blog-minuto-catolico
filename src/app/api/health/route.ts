@@ -19,8 +19,19 @@ import { articles, ingestionRuns, liturgicalDays } from "@/db/schema";
 /** Sem execução de ingestão neste prazo, algo está errado (cron é de 15 min). */
 const LIMITE_SEM_INGESTAO_S = 90 * 60;
 
-/** A liturgia é recarregada mensalmente; 40 dias dá folga para atraso. */
-const LIMITE_SEM_LITURGIA_S = 40 * 24 * 60 * 60;
+/**
+ * Folga mínima do calendário litúrgico, em dias.
+ *
+ * Este limite existe por causa de 01/08/2026: o painel de liturgia da capa
+ * sumiu porque o calendário do Salve Maria terminava em 31/07 e a fonte ainda
+ * não havia publicado agosto. O health-check da época só sabia responder "tem
+ * liturgia hoje?" — ou seja, só acusava o problema DEPOIS de o site já estar
+ * sem o painel, quando não havia mais nada a fazer além de esperar.
+ *
+ * Medir a folga faz o aviso chegar com uma semana de antecedência, enquanto
+ * ainda dá para agir (cobrar a fonte, importar o mês à mão, buscar outra).
+ */
+const FOLGA_MINIMA_LITURGIA_DIAS = 7;
 
 type Estado = "ok" | "degradado" | "parado";
 
@@ -55,12 +66,21 @@ export async function GET(): Promise<NextResponse> {
             sql`${ingestionRuns.error} is not null and ${ingestionRuns.startedAt} >= ${agora - 6 * 3600}`,
           ),
 
+        /**
+         * Uma consulta só responde às duas perguntas: "tem hoje?" e "até
+         * quando vai?". `date('now')` do SQLite é UTC; a diferença para
+         * `America/Sao_Paulo` é de no máximo um dia na virada, e para uma
+         * métrica de folga medida em dias isso não muda decisão nenhuma.
+         */
         db
-          .select({ n: sql<number>`count(*)` })
-          .from(liturgicalDays)
-          .where(
-            sql`${liturgicalDays.date} = date('now')`,
-          ),
+          .select({
+            hoje: sql<number>`sum(case when ${liturgicalDays.date} = date('now') then 1 else 0 end)`,
+            ultimo: sql<string | null>`max(${liturgicalDays.date})`,
+            folga: sql<
+              number | null
+            >`cast(julianday(max(${liturgicalDays.date})) - julianday(date('now')) as integer)`,
+          })
+          .from(liturgicalDays),
       ]);
 
     const contagens = Object.fromEntries(
@@ -74,7 +94,11 @@ export async function GET(): Promise<NextResponse> {
     const fimUltima = ultimaIngestao[0]?.finishedAt ?? null;
     const segundosSemIngestao = fimUltima === null ? null : agora - fimUltima;
     const falhasRecentes = Number(ultimasFalhas[0]?.n ?? 0);
-    const temLiturgiaHoje = Number(liturgiaHoje[0]?.n ?? 0) > 0;
+
+    const temLiturgiaHoje = Number(liturgiaHoje[0]?.hoje ?? 0) > 0;
+    const ultimoDiaLiturgia = liturgiaHoje[0]?.ultimo ?? null;
+    // Tabela vazia trata como folga zero — pior caso, nunca "sem problema".
+    const folgaLiturgiaDias = Number(liturgiaHoje[0]?.folga ?? 0);
 
     const problemas: string[] = [];
 
@@ -91,7 +115,15 @@ export async function GET(): Promise<NextResponse> {
     }
 
     if (!temLiturgiaHoje) {
-      problemas.push("sem liturgia gravada para hoje");
+      problemas.push(
+        `sem liturgia gravada para hoje — o calendário termina em ${ultimoDiaLiturgia ?? "(tabela vazia)"}`,
+      );
+    } else if (folgaLiturgiaDias < FOLGA_MINIMA_LITURGIA_DIAS) {
+      // O aviso que faltava em agosto/2026: a capa ainda está inteira, mas vai
+      // deixar de estar. Chega enquanto ainda dá para agir.
+      problemas.push(
+        `liturgia acaba em ${folgaLiturgiaDias} dia(s) (${ultimoDiaLiturgia}) — a fonte ainda não publicou o mês seguinte`,
+      );
     }
 
     if (falhasRecentes >= 3) {
@@ -122,7 +154,11 @@ export async function GET(): Promise<NextResponse> {
           segundosDesdeUltima: segundosSemIngestao,
           falhasUltimas6h: falhasRecentes,
         },
-        liturgia: { temHoje: temLiturgiaHoje },
+        liturgia: {
+          temHoje: temLiturgiaHoje,
+          ultimoDia: ultimoDiaLiturgia,
+          folgaDias: folgaLiturgiaDias,
+        },
         problemas,
       },
       {

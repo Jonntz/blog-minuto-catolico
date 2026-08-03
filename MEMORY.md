@@ -4,7 +4,8 @@
 > Se o contexto acabar no meio de algo, o "Próximo passo exato" no fim deste
 > arquivo é onde retomar.
 
-**Última atualização:** 2026-07-27
+**Última atualização:** 2026-08-03 — provider de adaptação migrado para NVIDIA NIM
+(§2.6b) e conserto da capa sem liturgia (§2.5b).
 
 ---
 
@@ -72,6 +73,49 @@ reescritos — não traduzidos literalmente. Nunca texto integral (`CLAUDE.md` �
 Bloco "Fonte: X" + link canônico obrigatórios. Protege de direito autoral e de
 penalização por conteúdo duplicado.
 
+### 2.5b 🔴 A CAPA FICOU SEM LITURGIA — causa raiz achada em 03/08/2026
+
+**Sintoma:** os cartões "Liturgia de hoje" e "Santo do dia" sumiram da capa.
+Parecia funcionalidade removida; não era. `/api/health` dizia `temHoje: false`.
+
+**Causa:** a página `/calendario/` do Salve Maria **cresce mês a mês** e em 03/08
+ainda tinha só 7 tabelas (Jan–Jul) — verificado ao vivo, a última linha é
+`31 de Julho`. Sem linha para hoje, `LiturgyPanel` fazia `return null` e a coluna
+inteira desaparecia.
+
+**O que agravou (a parte que importa):** o cron da liturgia era **mensal**
+(`0 7 1 * *`). Rodou em 1º de agosto, não achou agosto, e o próximo disparo só
+viria em 1º de setembro — ou seja, **um mês inteiro sem liturgia por causa de um
+atraso de publicação de poucos dias na fonte**.
+
+**Consertos aplicados:**
+1. Cron **diário** (`0 7 * * *`). Repõe o mês em até 24h de a fonte publicar. Um
+   GET de ~170 KB/dia é ruído estatístico para um WordPress. Isso também torna
+   desnecessária a antiga rede de segurança de 10/jan.
+2. `ResultadoExecucao` ganhou `ultimoDiaCoberto` e `diasDeFolga`. **A métrica que
+   faltava:** a execução só reportava "quantos dias vi e gravei" — números que
+   ficaram ótimos no dia em que o site perdeu o painel, porque reraspar Jan–Jul
+   com sucesso conta como 212 dias atualizados. Ninguém media **até quando o
+   calendário vai**. Folga < 7 dias vira `liturgia_sem_folga` em `console.error`.
+3. `/api/health` expõe `liturgia.folgaDias` e acusa **antes** de acabar.
+4. `LiturgyPanel` não some mais: sem dado, mostra a data de hoje e diz até quando
+   a fonte publicou. **Nada é deduzido** — ver a regra de não-invenção abaixo.
+
+**Fontes alternativas testadas e DESCARTADAS (não repetir):**
+- `divinumofficium.com`: robots.txt permite, mas o Cloudflare deles devolve **403
+  ao nosso UA honesto** e só responde a UA de navegador. Forjar UA violaria
+  `CLAUDE.md` §6. Descartado.
+- API do Missale Meum: **continua 404** (`/api/v5/{en,pl,pt}/date/…`,
+  `/calendar/…`). Confirma §2.5. As páginas HTML respondem, mas o conteúdo vem por
+  RSC no cliente e **não há locale PT**. Descartado.
+- `salvemaria.com.br/calendario-2026`: **404**. Só existe `/calendario/` para o ano
+  corrente; anos passados têm URL própria. Não há páginas mensais.
+
+**Regra que não muda:** liturgia não se inventa. Em especial, **não derivar agosto
+de 2026 do calendário de 2025**: o santoral é fixo por data, mas o temporal não —
+03/08/2025 caiu num domingo (propers do domingo, santo vira comemoração) e
+03/08/2026 é segunda. Transferir ano parece plausível e produz liturgia falsa.
+
 ### 2.5 Liturgia — calendário tradicional de 1962
 - **Decisão do usuário:** calendário e santoral segundo o **missal de 1962** (missa
   tridentina), não o Novus Ordo.
@@ -87,19 +131,72 @@ penalização por conteúdo duplicado.
   A API pública parece ter saído do ar. Não perder tempo tentando de novo.
 
 ### 2.6 Modelo de linguagem — gratuito
+
+**⚠️ SUPERSEDIDO EM 03/08/2026 — o padrão agora é NVIDIA NIM. Ver §2.6b.**
+
 - **Não existe modelo gratuito na API da Anthropic.** O usuário pediu gratuito.
-- **Escolha: Cloudflare Workers AI** (binding `env.AI`). Coerente porque o alvo de
-  deploy já é Cloudflare Workers: sem API key, sem egress, sem cartão.
+- **Escolha original: Cloudflare Workers AI** (binding `env.AI`). Coerente porque o
+  alvo de deploy já é Cloudflare Workers: sem API key, sem egress, sem cartão.
   10.000 Neurons/dia grátis, reset 00:00 UTC, depois US$0,011/1k.
 - **Trade-off registrado:** um modelo aberto classe 8B adaptando notícia doutrinária
   EN→PT-BR erra terminologia e inventa detalhe bem mais que um modelo de fronteira.
   Glossário + guard-rails reduzem, não eliminam. O `CLAUDE.md` §1 exige precisão
   factual como requisito de produto — **essa tensão é real e está sendo assumida
   com os olhos abertos.**
-- **Mitigação de engenharia:** camada atrás da interface `TranslationProvider`, com
-  `workersAi` (padrão) e `anthropic` (stub desativado). Trocar = mudar env var.
+- **Mitigação de engenharia:** camada atrás da interface `TranslationProvider`.
+  **Foi esta decisão que salvou a migração de §2.6b**: trocar o provider inteiro
+  não tocou `guardrails.ts`, `glossary.ts`, `prompt.ts` nem `adapt.ts`.
 - **Postura de falha:** quota do dia esgotada ⇒ item vira `draft`, **nunca** publica
   sem adaptação; o cron seguinte reprocessa a fila.
+
+### 2.6b Migração para NVIDIA NIM (03/08/2026) — provider padrão atual
+
+**Motivo:** não é preço (os dois são gratuitos), é **disponibilidade**. A cota do
+Workers AI é de 10.000 Neurons/dia e cada artigo custa DUAS chamadas carregando o
+glossário. Medido em §5a: ~34 artigos/dia contra ~75 que as fontes produzem — a
+fila **nascia represada**, o lote abortava por `quota` e os artigos ficavam presos
+em `draft` até o reset das 00:00 UTC. Era essa a causa do relato do usuário de que
+"a automação às vezes não funciona": não era bug, era teto de cota batendo todo dia.
+
+- **Endpoint:** `https://integrate.api.nvidia.com/v1/chat/completions`,
+  OpenAI-compatível. Auth `Bearer nvapi-...`.
+- **Free tier:** NVIDIA Developer Program, ~40 req/min **por modelo**, mais um
+  saldo inicial de créditos. Limite por REQUISIÇÃO, não por orçamento de compute
+  que o glossário consome desproporcionalmente. Com lote de 5 a cada 15 min são
+  10 chamadas/execução — duas ordens de grandeza abaixo do teto.
+- **Modelos (verificados em `GET /v1/models`, 03/08/2026):**
+  adaptação `nvidia/nemotron-3-super-120b-a12b` (o modelo próprio da NVIDIA, MoE
+  120B/12B ativos); verificação `meta/llama-3.3-70b-instruct`.
+- **🔑 GANHO ESTRUTURAL — juiz ≠ réu.** O aviso de `VerificacaoFactual` dizia que a
+  checagem factual era feita pelo MESMO modelo que escreveu o texto, "limitação
+  estrutural" porque no Workers AI não havia segundo modelo de qualidade
+  equivalente de graça. Com a NVIDIA **essa limitação deixou de existir**: escreve
+  um Nemotron, audita um Llama — famílias e dados de treino diferentes. **Se alguém
+  apontar `NVIDIA_VERIFY_MODEL` para um Nemotron, essa garantia some em silêncio.**
+- **Não mandar campo fora do contrato OpenAI.** Nada de `response_format` nem
+  `chat_template_kwargs`. A lição está em §5a/`workers-ai.ts`: mandar
+  `response_format` para modelo que não suporta fez a API **rejeitar a requisição
+  inteira** (erro 5025) e o sintoma chegou disfarçado de "incapacidade do modelo".
+- **Modelos de raciocínio:** os Nemotron podem emitir `<think>…</think>` inline.
+  `limparRaciocinio()` descarta antes do parsing — **obrigatório**. O perigo é
+  específico: os marcadores são procurados com `^` + flag `m`, então menção no
+  meio da frase é inofensiva; o que estraga é o modelo **rascunhar a resposta
+  inteira dentro do `<think>` com o marcador em início de linha** (é o que
+  modelos de raciocínio fazem antes de responder) — o parser acha o rascunho
+  primeiro. **Verificado nos dois caminhos:** na adaptação o título de ensaio é
+  publicado no lugar do final; na verificação um `VEREDITO: DIVERGENTE` ensaiado
+  com lista de divergências reprova artigo que o veredito final aprovava.
+  Bloco `<think>` sem fechar (teto de tokens estourado) ⇒ string vazia ⇒
+  `resposta_invalida`, falha fechada. `max_tokens` da adaptação subiu para 8000
+  porque o raciocínio sai do mesmo teto que a resposta.
+- **Contrato do endpoint conferido ao vivo (03/08):** o payload exato que o
+  provider envia é aceito; sem header → **401**, chave inválida → **403**. Os
+  dois viram `desativado`, que aborta o lote com mensagem acionável em vez de
+  queimar a fila item a item.
+- **Segredo:** `wrangler secret put NVIDIA_API_KEY`. `src/lib/env.ts` exige a chave
+  quando `TRANSLATION_PROVIDER=nvidia` e falha alto na subida do lote.
+- **Volta atrás:** `TRANSLATION_PROVIDER=workersAi` no `wrangler.jsonc`. O binding
+  `AI` continua declarado exatamente por isso.
 
 ### 2.7 Automação — polling, não tempo real
 Cron Triggers do Cloudflare a cada **15 min**, alinhado ao `<ttl>15</ttl>` do EWTN.
@@ -1049,7 +1146,19 @@ ambos corrigiram erros reais e distintos. O que falta é só a query acima.
 
 ## 6. Próximo passo exato
 
-> **ATUAL (29/07, 04:00 UTC)** — Fases 0–2 entregues e em produção. Aberto:
+> **ATUAL (03/08)** — bloqueante único para a adaptação voltar a rodar:
+> **`wrangler secret put NVIDIA_API_KEY`** (chave gratuita em
+> https://build.nvidia.com), na app. Sem ela `/api/cron/adapt` falha alto e
+> explícito — de propósito, ver §2.6b. Depois: `npm run cf:deploy` e
+> `wrangler deploy --config workers/scheduler/wrangler.jsonc` (o segundo é
+> obrigatório: a cadência do cron da liturgia mudou, §2.5b).
+>
+> Fila em 03/08 antes do deploy: 94 `draft`, 55 `failed_validation`, 27
+> publicados. O `requeueTransitorios` devolve à fila só o que reprovou por FORMA
+> e dentro de 3 dias — o resto do backlog de `failed_validation` continua parado
+> por decisão, não por bug.
+
+> **(29/07, 04:00 UTC)** — Fases 0–2 entregues e em produção. Aberto:
 > 1. Confirmar que o cron dispara sozinho após o service binding (verificação
 >    rodando; esperar linha nova em `ingestion_runs` sem disparo manual).
 > 2. Medir vazão real dos modelos assimétricos — depende da cota liberar.

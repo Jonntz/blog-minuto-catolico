@@ -10,10 +10,12 @@ import { articles } from "@/db/schema";
  * de recuperá-lo é `UPDATE` manual no banco.
  *
  * A distinção entre transitório e definitivo é o coração deste módulo, e ela é
- * conservadora de propósito: na dúvida, NÃO reprocessa. Reprocessar um artigo
- * que é legitimamente ruim gasta cota de Neurons — que, medido, dá para ~34
- * artigos por dia — e ainda arrisca publicá-lo numa tentativa em que o checador
- * esteja mais permissivo.
+ * conservadora de propósito: na dúvida, NÃO reprocessa. O motivo de custo
+ * afrouxou quando o provider padrão passou a ser a NVIDIA (o teto agora é de
+ * requisições por minuto, não de um orçamento diário de compute), mas o motivo
+ * de FUNDO não mudou e é o que manda aqui: reprocessar um artigo legitimamente
+ * ruim é apostar que numa próxima passagem o checador esteja mais permissivo —
+ * ou seja, torcer para a validação falhar.
  */
 
 /**
