@@ -193,6 +193,32 @@ em `draft` até o reset das 00:00 UTC. Era essa a causa do relato do usuário de
   provider envia é aceito; sem header → **401**, chave inválida → **403**. Os
   dois viram `desativado`, que aborta o lote com mensagem acionável em vez de
   queimar a fila item a item.
+- **🔴 RACIOCÍNIO PRECISA FICAR DESLIGADO — medido em produção (03/08).**
+  Primeiras 3 adaptações reais com o Nemotron 3 Super: 1 parseou com
+  `tokens_out: 4629` (para um corpo de ~950 tokens — ~3.500 gastos pensando) e
+  **2 vieram inparseáveis** (`resposta_invalida`, ~54s cada, tokens não
+  contabilizados porque o caminho de erro não carrega `usage`). Raciocínio sai
+  do MESMO teto de `max_tokens` que a resposta: se ele se estende, a resposta
+  trunca, o `<think>` nunca fecha e sobra string vazia. Além disso, modelo
+  raciocinando tende a "explicar" em vez de emitir o formato de blocos exato.
+  **Nada neste pipeline exige raciocínio** — o trabalho é reescrever seguindo
+  gabarito, não resolver problema.
+  - **Mecanismo:** `"chat_template_kwargs": {"enable_thinking": false}` como
+    campo de topo do corpo (é o `extra_body` do SDK OpenAI). Só é enviado para
+    modelos cujo id casa `/nemotron/i` — o verificador é um Llama da Meta, cujo
+    chat template não conhece o campo.
+  - **Rede de proteção obrigatória:** campo fora do contrato OpenAI pode fazer a
+    API rejeitar a requisição inteira (lição do erro 5025 do Workers AI). Se
+    vier 400 citando o campo, `SEM_SUPORTE_A_EXTRAS` memoriza o modelo por
+    isolate e refaz a chamada sem ele — em vez de perder uma requisição por
+    artigo, para sempre.
+  - **Bônus:** corta ~4x o token de saída, esticando os créditos gratuitos.
+- **Diagnóstico de `resposta_invalida` agora vai para o banco.** As mensagens
+  carregam `finish_reason`, chars brutos, chars após limpar raciocínio e um
+  trecho de 180 chars — porque a causa só existia no log do Worker e chegar nela
+  exigia `wrangler tail` no instante da falha. `finish_reason: "length"` é a
+  assinatura de truncamento. Consulta útil:
+  `SELECT slug, validation_errors FROM articles WHERE status='failed_validation' ORDER BY updated_at DESC LIMIT 5;`
 - **Segredo:** `wrangler secret put NVIDIA_API_KEY`. Quem exige a chave é
   `criarProviderNvidia()`, que falha alto na subida do lote.
 - **🔴 ARMADILHA JÁ PAGA (03/08) — não repetir:** a exigência da chave chegou a

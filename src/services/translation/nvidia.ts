@@ -135,6 +135,63 @@ export interface EnvNvidia {
   NVIDIA_VERIFY_MODEL?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Controle de raciocínio
+// ---------------------------------------------------------------------------
+
+/**
+ * Os Nemotron 3 são modelos de RACIOCÍNIO com raciocínio CONTROLÁVEL, e para
+ * este pipeline ele precisa ficar DESLIGADO.
+ *
+ * Medido em produção em 03/08/2026, nas três primeiras adaptações reais:
+ *   - 1 resposta parseou, com `tokens_out: 4629` — para um corpo de ~950
+ *     tokens. Ou seja, ~3.500 tokens gastos pensando.
+ *   - 2 respostas vieram INPARSEÁVEIS (`resposta_invalida`), ~54s cada.
+ *
+ * Raciocínio atrapalha aqui por dois motivos somados: ele sai do mesmo teto de
+ * `max_tokens` que a resposta (raciocínio longo trunca a resposta no meio, o
+ * `<think>` nunca fecha e sobra string vazia), e modelo raciocinando tende a
+ * "explicar" em vez de emitir o formato de blocos exato que `prompt.ts` pede.
+ * Nada aqui exige raciocínio: o trabalho é reescrever um texto seguindo um
+ * gabarito, não resolver problema.
+ *
+ * Efeito colateral relevante: corta o consumo de token de saída em ~4x, o que
+ * estica os créditos gratuitos.
+ *
+ * ⚠️ Este é o ÚNICO campo fora do contrato OpenAI que enviamos, e vai com rede
+ * de proteção (`SEM_SUPORTE_A_EXTRAS`) justamente pela lição do `workers-ai.ts`:
+ * campo não suportado pode fazer a API rejeitar a requisição INTEIRA.
+ */
+const EXTRAS_NEMOTRON = {
+  chat_template_kwargs: { enable_thinking: false },
+} as const;
+
+/**
+ * Só famílias que documentam o campo. O verificador é um Llama da Meta, cujo
+ * chat template não conhece `enable_thinking` — mandar para ele seria criar
+ * risco de 400 em troca de nada.
+ */
+function precisaDesligarRaciocinio(modelo: string): boolean {
+  return /nemotron/i.test(modelo);
+}
+
+/**
+ * Modelos que já rejeitaram os extras. Latch por isolate: aprendida a lição,
+ * as chamadas seguintes nem tentam — em vez de pagar uma requisição perdida
+ * por artigo, para sempre.
+ */
+const SEM_SUPORTE_A_EXTRAS = new Set<string>();
+
+/** 400 causado pelo campo extra, e não pelo resto da requisição. */
+function ehRecusaDeExtras(status: number, corpo: string): boolean {
+  return (
+    status === 400 &&
+    /chat_template_kwargs|enable_thinking|unrecognized|unexpected|extra_forbidden|additional properties/i.test(
+      corpo,
+    )
+  );
+}
+
 interface OpcoesChamada {
   maxTokens: number;
   temperatura: number;
@@ -303,6 +360,18 @@ function lerUso(resposta: RespostaChatNvidia): UsoModelo {
 interface RetornoBruto {
   texto: string;
   uso: UsoModelo;
+  /**
+   * Diagnóstico que acompanha a resposta até a mensagem de erro.
+   *
+   * Existe porque a causa de um `resposta_invalida` só é visível no log do
+   * Worker, e chegar nele exige `wrangler tail` no momento exato da falha. Com
+   * isto o motivo fica gravado em `articles.validation_errors` e uma consulta
+   * ao D1 responde "por que reprovou?" dias depois. `finish_reason: "length"`
+   * é a assinatura de truncamento por `max_tokens`.
+   */
+  finishReason: string;
+  /** Tamanho do conteúdo ANTES de descartar o raciocínio. */
+  charsBrutos: number;
 }
 
 async function chamar(
@@ -311,6 +380,42 @@ async function chamar(
   mensagens: readonly MensagemChat[],
   opcoes: OpcoesChamada,
 ): Promise<{ ok: true; valor: RetornoBruto } | { ok: false; erro: ErroProvider }> {
+  const comExtras =
+    precisaDesligarRaciocinio(modelo) && !SEM_SUPORTE_A_EXTRAS.has(modelo);
+
+  const resultado = await chamarUmaVez(chave, modelo, mensagens, opcoes, comExtras);
+
+  // A API recusou o campo extra. Aprende (para não repetir a cada artigo) e
+  // refaz sem ele: melhor raciocínio ligado que lote inteiro parado.
+  if (!resultado.ok && resultado.recusouExtras) {
+    SEM_SUPORTE_A_EXTRAS.add(modelo);
+    console.warn(
+      JSON.stringify({
+        escopo: "translation.nvidia",
+        evento: "extras_recusados",
+        modelo,
+        detalhe:
+          "chat_template_kwargs rejeitado; refazendo sem ele. O raciocínio fica LIGADO e volta o risco de truncamento — considere trocar de modelo.",
+      }),
+    );
+    const semExtras = await chamarUmaVez(chave, modelo, mensagens, opcoes, false);
+    return semExtras.ok ? semExtras : { ok: false, erro: semExtras.erro };
+  }
+
+  return resultado.ok ? resultado : { ok: false, erro: resultado.erro };
+}
+
+type ResultadoChamada =
+  | { ok: true; valor: RetornoBruto }
+  | { ok: false; erro: ErroProvider; recusouExtras?: boolean };
+
+async function chamarUmaVez(
+  chave: string,
+  modelo: string,
+  mensagens: readonly MensagemChat[],
+  opcoes: OpcoesChamada,
+  comExtras: boolean,
+): Promise<ResultadoChamada> {
   let resposta: Response;
 
   try {
@@ -329,6 +434,7 @@ async function chamar(
         // `stream: false` explícito: alguns NIM assumem streaming por padrão, e
         // um corpo SSE quebraria o `resposta.json()` abaixo de forma obscura.
         stream: false,
+        ...(comExtras ? EXTRAS_NEMOTRON : {}),
       }),
       /**
        * Aqui `AbortSignal` funciona, ao contrário do que acontece no
@@ -346,7 +452,11 @@ async function chamar(
   if (!resposta.ok) {
     // O corpo é lido para o log dizer o motivo real, e não só o status.
     const corpo = await resposta.text().catch(() => "");
-    return { ok: false, erro: classificarErroHttp(resposta.status, corpo) };
+    return {
+      ok: false,
+      erro: classificarErroHttp(resposta.status, corpo),
+      recusouExtras: comExtras && ehRecusaDeExtras(resposta.status, corpo),
+    };
   }
 
   let payload: RespostaChatNvidia;
@@ -362,22 +472,48 @@ async function chamar(
     };
   }
 
+  const finishReason = String(payload.choices?.[0]?.finish_reason ?? "?");
   const bruto = payload.choices?.[0]?.message?.content;
+
   if (typeof bruto !== "string" || bruto.trim().length === 0) {
     return {
       ok: false,
       erro: {
         tipo: "resposta_invalida",
+        mensagem: `Resposta da NVIDIA sem choices[0].message.content utilizável (finish_reason=${finishReason}).`,
+      },
+    };
+  }
+
+  const texto = limparRaciocinio(bruto);
+
+  /**
+   * Conteúdo que existia e sumiu inteiro na limpeza = `<think>` sem fechar =
+   * o teto de `max_tokens` cortou o modelo enquanto ele ainda pensava. Vale um
+   * erro próprio: "o modelo não sabe responder" e "o modelo não teve espaço
+   * para responder" pedem ações opostas.
+   */
+  if (texto.length === 0) {
+    return {
+      ok: false,
+      erro: {
+        tipo: "resposta_invalida",
         mensagem:
-          "Resposta da NVIDIA sem choices[0].message.content utilizável " +
-          `(finish_reason=${String(payload.choices?.[0]?.finish_reason)}).`,
+          `Modelo truncado enquanto raciocinava: ${bruto.length} chars de <think> sem fechar, ` +
+          `finish_reason=${finishReason}, max_tokens=${opcoes.maxTokens}. ` +
+          "Raciocínio deveria estar desligado — confira se chat_template_kwargs foi aceito.",
       },
     };
   }
 
   return {
     ok: true,
-    valor: { texto: limparRaciocinio(bruto), uso: lerUso(payload) },
+    valor: {
+      texto,
+      uso: lerUso(payload),
+      finishReason,
+      charsBrutos: bruto.length,
+    },
   };
 }
 
@@ -432,7 +568,10 @@ export function criarProviderNvidia(env: EnvNvidia): TranslationProvider {
           erro: {
             tipo: "resposta_invalida",
             mensagem:
-              "Adaptação: resposta do modelo não continha os blocos TITULO/DEK/CORPO nem um JSON equivalente.",
+              "Adaptação: resposta não continha os blocos TITULO/DEK/CORPO nem JSON equivalente " +
+              `(finish_reason=${bruto.valor.finishReason}, ${bruto.valor.charsBrutos} chars brutos, ` +
+              `${bruto.valor.texto.length} após limpar raciocínio). Trecho: ` +
+              JSON.stringify(bruto.valor.texto.slice(0, 180)),
           },
         };
       }
@@ -459,7 +598,9 @@ export function criarProviderNvidia(env: EnvNvidia): TranslationProvider {
           erro: {
             tipo: "resposta_invalida",
             mensagem:
-              "Verificação factual: resposta do modelo não continha VEREDITO legível.",
+              "Verificação factual: resposta não continha VEREDITO legível " +
+              `(finish_reason=${bruto.valor.finishReason}). Trecho: ` +
+              JSON.stringify(bruto.valor.texto.slice(0, 180)),
           },
         };
       }
