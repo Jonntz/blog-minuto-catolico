@@ -165,7 +165,22 @@ export async function GET(): Promise<NextResponse> {
         // 503 é o que faz um monitor externo disparar alerta. Devolver 200 com
         // `estado: "parado"` no corpo seria falha silenciosa com outro nome.
         status: estado === "parado" ? 503 : 200,
-        headers: { "cache-control": "no-store" },
+        headers: {
+          /**
+           * 30s de cache compartilhado, em vez de `no-store`.
+           *
+           * A rota é pública de propósito (ver acima) e dispara QUATRO consultas
+           * no D1 por requisição, incluindo dois `count(*)` e um agregado com
+           * `julianday()`. Sem cache, qualquer varredura anônima vira
+           * amplificação de custo no banco.
+           *
+           * 30s não custa nada a quem monitora: o cron mais rápido do projeto é
+           * de 15 minutos, então nenhum alerta atrasa de forma perceptível.
+           * `must-revalidate` para o monitor nunca receber resposta velha
+           * depois que a janela expira.
+           */
+          "cache-control": "public, s-maxage=30, must-revalidate",
+        },
       },
     );
   } catch (erro) {

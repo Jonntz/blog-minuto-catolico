@@ -3,7 +3,7 @@ import { CategoryTag } from "@/components/ui/category-tag";
 import { ArticleMedia } from "@/components/ui/article-media";
 import { Reveal } from "@/components/ui/reveal";
 import type { Article } from "@/db/schema";
-import { rotaArtigo } from "@/lib/seo";
+import { rotaArtigo, tituloArtigo } from "@/lib/seo";
 
 /**
  * Faixa editorial do design — a citação serifada grande sobre `--surface`,
@@ -54,7 +54,12 @@ export function Editorial({ artigo }: { artigo: Article | undefined }) {
           <div className="w-full justify-self-end lg:max-w-[420px]">
             <ArticleMedia
               src={artigo.imageUrl}
-              alt={artigo.imageCaption ?? ""}
+              // Cai para o título quando não há legenda, como já fazem
+              // `article-card` e `article-header`. Metade do acervo vem sem
+              // legenda (o feed do Sign of the Cross não a publica), e `alt=""`
+              // diz ao leitor de tela que a imagem é decorativa — o que numa
+              // foto de matéria é falso.
+              alt={artigo.imageCaption ?? tituloArtigo(artigo)}
               width={420}
               height={420}
               sizes="(min-width: 1024px) 420px, 100vw"

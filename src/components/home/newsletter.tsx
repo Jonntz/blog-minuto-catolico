@@ -1,11 +1,34 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 import { inscrever, type EstadoNewsletter } from "@/app/actions/newsletter";
 import { Container } from "@/components/ui/container";
 import { cn } from "@/lib/utils";
 
 const NOTA_PADRAO = "Sem custo. Cancele quando quiser.";
+
+/**
+ * O formulário coleta dado pessoal e a base legal declarada em `/privacidade`
+ * é o consentimento — que só é informado se o leitor souber o que está
+ * consentindo ANTES de enviar. O link fica junto do campo, não escondido no
+ * rodapé, e é `<Link>` para não recarregar a página e perder o que foi digitado.
+ */
+function AvisoDePrivacidade() {
+  return (
+    <>
+      {" "}
+      Ao assinar, você concorda com a{" "}
+      <Link
+        href="/privacidade"
+        className="underline decoration-from-font underline-offset-2 hover:no-underline"
+      >
+        Política de Privacidade
+      </Link>
+      .
+    </>
+  );
+}
 
 /**
  * Seção "Receba o resumo da manhã" do design.
@@ -74,6 +97,7 @@ export function Newsletter() {
         )}
       >
         {estado?.mensagem ?? NOTA_PADRAO}
+        {estado?.ok === false ? null : <AvisoDePrivacidade />}
       </p>
     </Container>
   );

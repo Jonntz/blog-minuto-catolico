@@ -1,9 +1,10 @@
 /**
  * POST /api/cron/ingest — disparo da ingestão.
  *
- * A autorização (`CRON_SECRET`) já foi validada em `src/proxy.ts`, na fronteira
- * de rede, antes da requisição chegar aqui (CLAUDE.md §3). Esta rota NÃO
- * reautentica: duplicar a checagem criaria dois lugares para errar.
+ * Autorização: `exigirCronSecret()` na primeira linha do handler. Não há
+ * `proxy.ts` neste projeto — o OpenNext não suporta middleware Node, e o
+ * comentário longo em `src/lib/cron-auth.ts` explica por quê. A fronteira de
+ * rede é uma regra de WAF no painel da Cloudflare.
  *
  * Quem chama é o Worker agendador (`workers/scheduler/`), a cada 15 min —
  * cadência alinhada ao `<ttl>15</ttl>` declarado pelo próprio EWTN.

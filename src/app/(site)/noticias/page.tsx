@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { ArticleCard } from "@/components/article/article-card";
@@ -61,6 +62,25 @@ async function Arquivo({ searchParams }: Props) {
     listarPaginado({ pagina, porPagina: POR_PAGINA, categoria }),
     categoriasComConteudo(),
   ]);
+
+  /**
+   * Página além do fim ⇒ 404.
+   *
+   * `listarPaginado` faz clamp para a última página real, e isso é deliberado e
+   * bom para o leitor: um link velho no WhatsApp continua mostrando conteúdo em
+   * vez de erro. Mas `generateMetadata` emitia canônica auto-referente com o
+   * número PEDIDO — então `?pagina=99`, num arquivo de 3 páginas, devolvia 200 +
+   * o conteúdo da página 3 + `<link rel="canonical" href="…?pagina=99">`. Uma
+   * família infinita de URLs distintas, todas auto-canonicalizadas, todas com o
+   * mesmo conteúdo. É armadilha de rastreamento clássica.
+   *
+   * O 404 é o único sinal que o Google entende sem ambiguidade aqui. Página 1
+   * escapa da checagem para o arquivo vazio continuar renderizando sua mensagem
+   * própria em vez de sumir.
+   */
+  if (pagina > 1 && pagina > resultado.totalDePaginas) {
+    notFound();
+  }
 
   const rotulo = categoria ? getCategoria(categoria)?.label : undefined;
 

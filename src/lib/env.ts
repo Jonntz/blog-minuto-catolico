@@ -9,7 +9,13 @@ import { getEnv } from "@/db";
  * perto de descobrir em produção que um segredo veio vazio.
  */
 
-const esquemaEnv = z.object({
+/**
+ * Exportado para que quem precisa validar UM campo isolado possa reusar o shape
+ * sem arrastar a validação do env inteiro — ver `getSiteUrlSync()` abaixo e
+ * `src/lib/cron-auth.ts`. O aviso em `getValidatedEnv()` explica por que a
+ * validação global não serve para esses casos.
+ */
+export const esquemaEnv = z.object({
   /**
    * URL pública canônica, sem barra final. Usada em metadata, OG, JSON-LD,
    * sitemaps e feed — se vier errada, o SEO inteiro aponta para o lugar errado.
@@ -21,7 +27,8 @@ const esquemaEnv = z.object({
 
   /**
    * Segredo compartilhado entre o worker agendador e as rotas /api/cron/*.
-   * Validado em proxy.ts antes da requisição chegar na rota.
+   * Conferido por `exigirCronSecret()` no topo de cada rota — que reusa este
+   * shape para validar o tamanho. Ver `src/lib/cron-auth.ts`.
    */
   CRON_SECRET: z
     .string()
@@ -122,18 +129,30 @@ export function getSiteUrlSync(): string {
 
   if (analise.success) return analise.data;
 
-  // Sem SITE_URL definida o build ainda precisa produzir URLs bem formadas.
-  // Falhar aqui impediria qualquer build local; o valor errado é visível e
-  // corrigível, e a validação estrita continua valendo em runtime.
+  /**
+   * Em produção, LANÇA. Não avisa.
+   *
+   * Isto já foi um `console.warn` que devolvia `localhost`, e o defeito passou
+   * assim mesmo: o build de 03/08/2026 publicou as cinco páginas institucionais
+   * com `<link rel="canonical" href="http://localhost:3000/...">`. Canônica
+   * apontando para localhost manda o Google desindexar a URL real — é o pior
+   * desfecho possível de SEO, e chegou lá porque um aviso em log de build não
+   * é lido por ninguém.
+   *
+   * O conserto de verdade é `.env.production` na raiz. Se ele sumir, o build
+   * tem de QUEBRAR, não avisar.
+   */
   if (process.env.NODE_ENV === "production") {
-    console.warn(
-      JSON.stringify({
-        evento: "site_url_ausente",
-        detalhe:
-          "SITE_URL não definida ou inválida — canônicas, OG e sitemaps vão sair com localhost.",
-      }),
+    throw new Error(
+      "SITE_URL ausente ou inválida no build de produção.\n" +
+        "  Canônicas, Open Graph, JSON-LD e sitemaps sairiam apontando para localhost.\n" +
+        "  Confira `.env.production` na raiz do repositório (deve conter SITE_URL=https://...).\n" +
+        "  Em runtime o valor vem de `vars.SITE_URL` no wrangler.jsonc — os dois precisam bater.",
     );
   }
+
+  // Em desenvolvimento o fallback é o comportamento desejado: ninguém deve
+  // precisar de um domínio real para rodar `next dev`.
   return "http://localhost:3000";
 }
 

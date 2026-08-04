@@ -1,3 +1,4 @@
+import { ConsentGate } from "@/components/consent/consent-gate";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { SiteHeader } from "@/components/layout/site-header";
 
@@ -34,6 +35,11 @@ export default function SiteLayout({
       </main>
 
       <SiteFooter />
+
+      {/* Depois do rodapé: o banner é `fixed`, então a posição no DOM não muda
+          onde ele aparece — mas ficar por último mantém a ordem de leitura e de
+          tabulação com o conteúdo primeiro. */}
+      <ConsentGate />
     </>
   );
 }

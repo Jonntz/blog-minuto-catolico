@@ -19,7 +19,7 @@
 | 0.3 | Scaffold Next.js 16.2 (App Router, TS 5.x, Tailwind 4, `src/`) | `done` |
 | 0.4 | `next.config.ts` (`cacheComponents`) + OpenNext/Wrangler (D1, R2, AI) | `done` |
 | 0.5 | Schema Drizzle + primeira migration | `done` |
-| 0.6 | `src/lib/env.ts` (zod) + `proxy.ts` (CRON_SECRET) | `done` |
+| 0.6 | `src/lib/env.ts` (zod) + autorização de cron | `done` (o `proxy.ts` foi descartado — ver §2b) |
 | 0.7 | Tokens `oklch` do design → `globals.css` (`@theme`) | `done` |
 | 1.A | Design importado → React/Next (dados mockados) | `done` (com débito de fidelidade — ver §2e) |
 | 1.B | Ingestão + dedupe + `robots.txt` + logging | `pending` |
@@ -639,7 +639,7 @@ src/db/schema.ts          CONTRATO entre as camadas — não alterar sem migrati
 src/db/index.ts           getDb() / getEnv()
 src/lib/env.ts            validação zod + getUserAgent()
 src/lib/utils.ts          cn()
-src/proxy.ts              fronteira de rede, CRON_SECRET
+src/lib/cron-auth.ts      autorização de cron (o proxy.ts foi descartado)
 src/app/globals.css       tokens oklch do design + prefers-reduced-motion
 src/app/layout.tsx        next/font auto-hospedado + anti-FOUC
 cloudflare-env.d.ts       gerado (NÃO ignorado no git — CI precisa)

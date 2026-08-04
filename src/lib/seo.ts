@@ -3,6 +3,7 @@ import { and, desc, eq, gte, isNotNull } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { getCategoria, getCategoriaOuPadrao } from "@/lib/categories";
 import { getSiteUrlSync } from "@/lib/env";
+import { PENDENTE } from "@/lib/institucional";
 
 /**
  * Camada de SEO do portal (CLAUDE.md §5).
@@ -269,6 +270,7 @@ export async function metadataCategoria(slug: string): Promise<Metadata> {
   const rotulo = categoria?.label ?? slug;
   const descricao = `Tudo sobre ${rotulo} no ${NOME_SITE}: ${DESCRICAO_SITE.toLowerCase()}`;
   const url = `${base}${rotaCategoria(slug)}`;
+  const og = await ogPadrao();
 
   return {
     metadataBase: new URL(base),
@@ -282,9 +284,13 @@ export async function metadataCategoria(slug: string): Promise<Metadata> {
       locale: LOCALE,
       title: `${rotulo} · ${NOME_SITE}`,
       description: truncar(descricao, MAX_DESCRICAO),
-      images: [await ogPadrao()],
+      images: [og],
     },
-    twitter: { card: "summary_large_image" },
+    twitter: cartaoTwitter({
+      titulo: `${rotulo} · ${NOME_SITE}`,
+      descricao: truncar(descricao, MAX_DESCRICAO),
+      imagem: og,
+    }),
   };
 }
 
@@ -316,6 +322,7 @@ export async function metadataArquivo({
     : `Arquivo completo do ${NOME_SITE}: todas as matérias publicadas, da mais recente para a mais antiga.`;
 
   const url = `${base}${rotaArquivo({ categoria, pagina })}`;
+  const og = await ogPadrao();
 
   return {
     metadataBase: new URL(base),
@@ -329,9 +336,13 @@ export async function metadataArquivo({
       locale: LOCALE,
       title: `${comPagina} · ${NOME_SITE}`,
       description: truncar(descricao, MAX_DESCRICAO),
-      images: [await ogPadrao()],
+      images: [og],
     },
-    twitter: { card: "summary_large_image" },
+    twitter: cartaoTwitter({
+      titulo: `${comPagina} · ${NOME_SITE}`,
+      descricao: truncar(descricao, MAX_DESCRICAO),
+      imagem: og,
+    }),
   };
 }
 
@@ -353,6 +364,7 @@ export async function metadataInstitucional({
 }): Promise<Metadata> {
   const base = await getSiteUrl();
   const url = `${base}${rotaInstitucional(slug)}`;
+  const og = await ogPadrao();
 
   return {
     metadataBase: new URL(base),
@@ -366,9 +378,13 @@ export async function metadataInstitucional({
       locale: LOCALE,
       title: `${titulo} · ${NOME_SITE}`,
       description: truncar(descricao, MAX_DESCRICAO),
-      images: [await ogPadrao()],
+      images: [og],
     },
-    twitter: { card: "summary_large_image" },
+    twitter: cartaoTwitter({
+      titulo: `${titulo} · ${NOME_SITE}`,
+      descricao: truncar(descricao, MAX_DESCRICAO),
+      imagem: og,
+    }),
   };
 }
 
@@ -380,6 +396,7 @@ export async function metadataInstitucional({
  */
 export async function metadataHome(): Promise<Metadata> {
   const base = await getSiteUrl();
+  const og = await ogPadrao();
   return {
     metadataBase: new URL(base),
     title: { absolute: NOME_SITE },
@@ -395,9 +412,13 @@ export async function metadataHome(): Promise<Metadata> {
       locale: LOCALE,
       title: NOME_SITE,
       description: DESCRICAO_SITE,
-      images: [await ogPadrao()],
+      images: [og],
     },
-    twitter: { card: "summary_large_image" },
+    twitter: cartaoTwitter({
+      titulo: NOME_SITE,
+      descricao: DESCRICAO_SITE,
+      imagem: og,
+    }),
   };
 }
 
@@ -437,6 +458,36 @@ async function ogPadrao(): Promise<ImagemOg> {
   };
 }
 
+/**
+ * Cartão do X/Twitter, completo.
+ *
+ * Existe porque quatro das cinco funções de metadata emitiam apenas
+ * `{ card: "summary_large_image" }`, sem título, descrição nem imagem. O card
+ * NÃO herda automaticamente do Open Graph em todos os consumidores — vários
+ * agregadores e apps de mensagem leem só as `twitter:*` — e o resultado era
+ * compartilhamento sem imagem em categoria, arquivo e institucionais.
+ *
+ * Centralizar num helper é o que impede a divergência de voltar: os valores já
+ * estão computados para o Open Graph logo acima de cada chamada, e passá-los
+ * aqui é uma linha.
+ */
+function cartaoTwitter({
+  titulo,
+  descricao,
+  imagem,
+}: {
+  titulo: string;
+  descricao: string;
+  imagem: ImagemOg;
+}): NonNullable<Metadata["twitter"]> {
+  return {
+    card: "summary_large_image",
+    title: titulo,
+    description: descricao,
+    images: [imagem.url],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // JSON-LD
 // ---------------------------------------------------------------------------
@@ -444,9 +495,18 @@ async function ogPadrao(): Promise<ImagemOg> {
 /** Nó JSON-LD. `unknown` e não `any` — CLAUDE.md §8. */
 export type JsonLd = Record<string, unknown>;
 
-/** Entidade `publisher`, com logo. Sem ela não há elegibilidade a rich result. */
+/**
+ * Entidade `publisher`, com logo. Sem ela não há elegibilidade a rich result.
+ *
+ * `contactPoint` e as políticas editoriais são o que o Google lê como sinal de
+ * E-E-A-T de veículo de notícia — e o portal já tem as páginas correspondentes.
+ * O contato só é emitido quando existe de verdade: declarar `contactPoint` sem
+ * e-mail atendido seria a mesma falha de transparência que `institucional.ts`
+ * evita nas páginas visíveis.
+ */
 export async function entidadePublisher(): Promise<JsonLd> {
   const base = await getSiteUrl();
+
   return {
     "@type": "NewsMediaOrganization",
     "@id": `${base}/#organizacao`,
@@ -458,6 +518,20 @@ export async function entidadePublisher(): Promise<JsonLd> {
       width: LOGO.largura,
       height: LOGO.altura,
     },
+    // Estas duas páginas existem e descrevem exatamente o que os campos pedem.
+    ethicsPolicy: `${base}/politica-editorial`,
+    publishingPrinciples: `${base}/politica-editorial`,
+    ...(PENDENTE.email
+      ? {
+          email: PENDENTE.email,
+          contactPoint: {
+            "@type": "ContactPoint",
+            contactType: "editorial",
+            email: PENDENTE.email,
+            availableLanguage: ["pt-BR"],
+          },
+        }
+      : {}),
   };
 }
 
@@ -516,7 +590,14 @@ export async function jsonLdNewsArticle(artigo: ArtigoSeo): Promise<JsonLd> {
   };
 }
 
-/** `WebSite` com SearchAction — habilita a caixa de busca de sitelinks. */
+/**
+ * `WebSite` com SearchAction — habilita a caixa de busca de sitelinks.
+ *
+ * O `potentialAction` estava prometido no comentário e ausente do objeto desde
+ * o começo. Aponta para `/busca?q=`, que é a rota real do site
+ * (`src/app/(site)/busca/page.tsx`) — declarar um endpoint de busca que não
+ * existe faria o recurso simplesmente não aparecer.
+ */
 export async function jsonLdWebSite(): Promise<JsonLd> {
   const base = await getSiteUrl();
   return {
@@ -528,6 +609,14 @@ export async function jsonLdWebSite(): Promise<JsonLd> {
     description: DESCRICAO_SITE,
     inLanguage: "pt-BR",
     publisher: await entidadePublisher(),
+    potentialAction: {
+      "@type": "SearchAction",
+      target: {
+        "@type": "EntryPoint",
+        urlTemplate: `${base}/busca?q={search_term_string}`,
+      },
+      "query-input": "required name=search_term_string",
+    },
   };
 }
 

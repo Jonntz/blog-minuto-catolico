@@ -58,10 +58,15 @@
   manual, disparo manual de automação) usar Server Actions em `/actions`. Para
   endpoints de consumo externo (webhooks de ingestão, cron) usar Route Handlers
   em `/api`.
-- **`proxy.ts` (substitui `middleware.ts`):** no Next.js 16, a validação de
-  fronteira de rede migrou para `proxy.ts`. É aqui que deve viver a checagem do
-  header `Authorization`/`CRON_SECRET` das rotas de ingestão e a proteção de
-  sessão do painel administrativo, antes mesmo de a request chegar às rotas.
+- **⚠️ `proxy.ts` NÃO é utilizável neste projeto.** No Next.js 16 a validação de
+  fronteira de rede migrou de `middleware.ts` para `proxy.ts` — mas isso é
+  **incompatível com o alvo de deploy**, e a incompatibilidade só aparece no
+  build do adapter: o OpenNext recusa middleware Node, e `runtime = "edge"` é
+  proibido em Proxy file (que no Next 16 é sempre Node). Não há configuração que
+  concilie os dois. **Não tente de novo** — o diagnóstico completo está em
+  `src/lib/cron-auth.ts`. A autorização vive no topo de cada Route Handler, e a
+  fronteira de rede é uma regra de WAF no painel da Cloudflare, que funciona
+  porque o agendador chama a app por service binding e não atravessa a borda.
 - **Estrutura de Pastas:** Adotar o padrão `src/`:
   - `src/app/` (Rotas, Layouts, Pages, Server Actions, route group `(admin)`
     para o painel de revisão editorial)
@@ -89,8 +94,9 @@
   - Só implementar ingestão via webhook/WebSub se a fonte específica suportar
     (raro); caso contrário, documentar o intervalo de polling escolhido como
     trade-off consciente entre "quase tempo real" e custo zero.
-- **Autorização:** validar o header de autorização (`CRON_SECRET`) em `proxy.ts`
-  antes de a execução chegar à rota de ingestão.
+- **Autorização:** `exigirCronSecret()` na PRIMEIRA linha de toda rota
+  `/api/cron/*` (não em `proxy.ts` — ver §3), somado à regra de WAF que bloqueia
+  esse caminho vindo da internet pública.
 - **Idempotência e deduplicação:** cada execução de ingestão deve gerar um hash
   estável (ex. URL canônica da fonte + título normalizado) para evitar publicar
   a mesma notícia duas vezes entre execuções de polling.

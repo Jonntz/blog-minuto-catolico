@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getEnv } from "@/db";
+import { esquemaEnv } from "@/lib/env";
 
 /**
  * Autorização das rotas `/api/cron/*`.
@@ -25,27 +26,69 @@ import { getEnv } from "@/db";
  * tentativa inválida continua sendo registrada.
  *
  * **Toda rota nova em `/api/cron/` PRECISA chamar isto na primeira linha.**
+ *
+ * ## A fronteira de rede existe — só que no painel, não no código
+ *
+ * O papel que o `proxy.ts` teria é cumprido por uma regra de WAF que bloqueia
+ * `/api/cron/*` vindo da internet pública. Isso funciona sem quebrar o cron
+ * porque `workers/scheduler/index.ts` chama a app por **service binding**
+ * (`env.APP.fetch`), e tráfego de service binding não atravessa a borda da
+ * Cloudflare — não passa por WAF nem por Cache Rules.
+ *
+ * Ou seja: esta função é a SEGUNDA linha de defesa, não a única. Se a regra de
+ * WAF for removida do painel, ela volta a ser a única — e continua suficiente,
+ * mas o log de sondagem em `cron_sem_header` fica bem mais movimentado.
  */
 export async function exigirCronSecret(
   request: Request,
 ): Promise<NextResponse | null> {
-  const { env } = { env: await getEnv() };
-  const segredo = env.CRON_SECRET;
+  const env = await getEnv();
+  const rota = new URL(request.url).pathname;
 
-  // Sem segredo configurado a rota ficaria ABERTA — pior que falhar.
+  /**
+   * Valida SÓ o shape do `CRON_SECRET`, e não o env inteiro.
+   *
+   * O binding entrega a string crua, sem passar pelo zod de `src/lib/env.ts`,
+   * então um segredo de 4 caracteres passaria despercebido. Mas chamar
+   * `getValidatedEnv()` aqui seria repetir o erro de 03/08/2026 documentado
+   * naquele arquivo: validação global acoplada derrubou `/api/cron/liturgy`
+   * porque exigia uma chave de IA que a liturgia não usa. Mesma técnica de
+   * `getSiteUrlSync` — reaproveitar o shape isolado.
+   */
+  const analise = esquemaEnv.shape.CRON_SECRET.safeParse(env.CRON_SECRET);
+
+  // Sem segredo válido a rota ficaria ABERTA — pior que falhar.
   // Falha fechada, e barulhenta o bastante para aparecer no log.
-  if (!segredo) {
+  if (!analise.success) {
     console.error(
       JSON.stringify({
         evento: "cron_sem_segredo_configurado",
-        rota: new URL(request.url).pathname,
+        rota,
+        detalhe: analise.error.issues[0]?.message ?? "CRON_SECRET ausente",
       }),
     );
     return NextResponse.json({ erro: "Cron não configurado" }, { status: 500 });
   }
 
+  const segredo = analise.data;
+
   const header = request.headers.get("authorization");
   if (!header?.startsWith("Bearer ")) {
+    /**
+     * Loga também quando NÃO há header.
+     *
+     * Antes este caminho saía calado, e o de segredo errado logo abaixo
+     * registrava com IP. A assimetria tinha um efeito ruim: varredura
+     * automatizada de `/api/cron/*` — que nunca manda header — passava
+     * completamente invisível, justamente o padrão mais comum de sondagem.
+     */
+    console.warn(
+      JSON.stringify({
+        evento: "cron_sem_header",
+        rota,
+        ip: request.headers.get("cf-connecting-ip") ?? "desconhecido",
+      }),
+    );
     return NextResponse.json({ erro: "Não autorizado" }, { status: 401 });
   }
 
@@ -53,7 +96,7 @@ export async function exigirCronSecret(
     console.warn(
       JSON.stringify({
         evento: "cron_segredo_invalido",
-        rota: new URL(request.url).pathname,
+        rota,
         ip: request.headers.get("cf-connecting-ip") ?? "desconhecido",
       }),
     );

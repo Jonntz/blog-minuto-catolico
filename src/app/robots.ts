@@ -13,8 +13,10 @@ import { getSiteUrl } from "@/lib/seo";
  *               Rastreá-las só gasta orçamento de crawl e polui o Search Console.
  *   /admin/   — painel de revisão editorial (route group `(admin)`).
  *
- * Bloquear no robots.txt NÃO é controle de acesso — quem garante isso é o
- * `src/proxy.ts`. Aqui é apenas higiene de rastreamento.
+ * Bloquear no robots.txt NÃO é controle de acesso: qualquer um pode ignorar
+ * este arquivo. Aqui é só higiene de rastreamento. O controle de acesso real de
+ * `/api/cron/*` são duas camadas — a regra de WAF no painel da Cloudflare e o
+ * `exigirCronSecret()` no topo de cada rota. Ver `src/lib/cron-auth.ts`.
  */
 export default async function robots(): Promise<MetadataRoute.Robots> {
   // Marca a rota como dinâmica sob Cache Components: SITE_URL vem do binding do

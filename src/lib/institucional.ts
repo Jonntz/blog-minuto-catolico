@@ -17,7 +17,7 @@
  */
 
 /** Data da última revisão das páginas institucionais (exibida ao leitor). */
-export const ATUALIZADO_EM = "1 de agosto de 2026";
+export const ATUALIZADO_EM = "3 de agosto de 2026";
 
 export const PENDENTE = {
   /** E-mail de contato público. Ex.: "contato@minutocatolico.com.br". */
@@ -74,6 +74,13 @@ export const FONTES_DECLARADAS = [
  * A política de privacidade lista isto nominalmente porque é o que a LGPD
  * chama de transparência sobre compartilhamento — e porque um leitor tem
  * direito de saber que a hospedagem é estrangeira.
+ *
+ * ⚠️ ESTA LISTA É UMA DECLARAÇÃO JURÍDICA, NÃO DOCUMENTAÇÃO.
+ * Ela precisa bater com o que o código realmente faz, nas DUAS direções. Em
+ * 03/08/2026 ela errava nas duas ao mesmo tempo: declarava "Cloudflare Web
+ * Analytics", que nunca foi instalado, e "Cloudflare Workers AI", trocado por
+ * NVIDIA NIM em `c8a7c53` — e omitia a Adcash, que rodava em todas as páginas.
+ * Ao mexer em provider, analytics ou anúncio, mexa AQUI no mesmo commit.
  */
 export const TRATAMENTOS = [
   {
@@ -81,20 +88,33 @@ export const TRATAMENTOS = [
     papel:
       "Hospedagem, CDN e proteção contra abuso. Processa o endereço IP de cada requisição para entregar as páginas e bloquear ataques.",
     local: "Servidores fora do Brasil.",
+    condicionadoAConsentimento: false,
   },
   {
-    nome: "Cloudflare Web Analytics",
+    nome: "NVIDIA NIM",
     papel:
-      "Medição de audiência agregada (páginas vistas, origem do acesso). Não usa cookie e não cria identificador persistente de visitante.",
+      "Adaptação dos textos das matérias para português. Recebe apenas o conteúdo publicado pelas fontes — nunca endereço IP, e-mail ou qualquer dado de quem visita o site.",
     local: "Servidores fora do Brasil.",
+    condicionadoAConsentimento: false,
   },
   {
-    nome: "Cloudflare Workers AI",
+    nome: "Adcash",
     papel:
-      "Adaptação dos textos para português. Processa apenas o conteúdo das matérias das fontes — nunca dado de quem visita o site.",
+      "Rede de publicidade. Quando você autoriza, ela carrega os anúncios e recebe seu endereço IP e dados do navegador para escolher o que exibir e medir os resultados.",
     local: "Servidores fora do Brasil.",
+    condicionadoAConsentimento: true,
   },
 ] as const;
+
+/**
+ * Publicidade está ligada no site?
+ *
+ * Enquanto for `false`, a política declara a publicidade como SUSPENSA e o
+ * carregador de anúncio não é montado. Existe como interruptor único para que
+ * texto legal e comportamento nunca possam divergir — foi exatamente essa
+ * divergência que criou o problema de 03/08/2026.
+ */
+export const PUBLICIDADE_ATIVA: boolean = false;
 
 /**
  * O que fica gravado no aparelho do leitor.
@@ -110,5 +130,9 @@ export const ARMAZENAMENTO_LOCAL = [
   {
     chave: "bn-salvos",
     para: "Guardar a lista de matérias que você marcou para ler depois.",
+  },
+  {
+    chave: "bn-consentimento",
+    para: "Lembrar se você autorizou ou recusou a exibição de publicidade, para não perguntar de novo a cada página.",
   },
 ] as const;

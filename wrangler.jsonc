@@ -28,6 +28,36 @@
 			"database_name": "minuto-eclesiastico",
 			"database_id": "be66eecd-f2e1-48ac-9f47-19b0b0f6acb4",
 			"migrations_dir": "drizzle/migrations"
+		},
+		// Tag cache do OpenNext. Banco SEPARADO do da aplicação, de propósito:
+		// o adapter cria e gerencia a própria tabela de revalidações, e ela não
+		// deve morar no schema que o Drizzle controla — um `drizzle-kit push`
+		// distraído poderia derrubá-la. Também evita contenção de escrita com a
+		// ingestão. Ver open-next.config.ts.
+		//
+		// ⚠️ Criar antes do primeiro deploy:
+		//   npx wrangler d1 create minuto-eclesiastico-cache
+		// e colar o id devolvido aqui.
+		{
+			"binding": "NEXT_TAG_CACHE_D1",
+			"database_name": "minuto-eclesiastico-cache",
+			"database_id": "47f55bb6-cf1f-4a6f-b82a-a11d640f61c1"
+		}
+	],
+	// Cache incremental do OpenNext (`"use cache"` + cacheLife).
+	//
+	// KV e não R2: ativar o R2 exige método de pagamento mesmo no tier gratuito
+	// (foi por isso que o binding MEDIA saiu daqui), enquanto KV é gratuito sem
+	// cartão. Sem este binding, os perfis de cacheLife do next.config.ts e todo
+	// o revalidate.ts ficam sem store durável e cada isolate frio refaz as
+	// consultas no D1.
+	//
+	// ⚠️ Criar antes do primeiro deploy:
+	//   npx wrangler kv namespace create NEXT_INC_CACHE_KV
+	"kv_namespaces": [
+		{
+			"binding": "NEXT_INC_CACHE_KV",
+			"id": "9f8ec88137174d95ba4f85404ce750df"
 		}
 	],
 	// R2 (binding MEDIA) REMOVIDO por ora.

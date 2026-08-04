@@ -1,0 +1,46 @@
+# Cabeçalhos dos ARQUIVOS ESTÁTICOS.
+#
+# ⚠️ LEIA ANTES DE "CONSOLIDAR" ISTO COM O next.config.ts.
+#
+# Este arquivo e o `headers()` do `next.config.ts` cobrem coisas DIFERENTES e
+# não se substituem:
+#
+#   - `next.config.ts` → entra no routes-manifest e é aplicado pelo matcher do
+#     OpenNext. Cobre o HTML renderizado no servidor, ou seja, quase o site
+#     inteiro.
+#   - este arquivo → só é lido pelo *asset handler* do Workers, que serve
+#     `/_next/static/*` e o conteúdo de `public/`. O `headers()` do Next NÃO
+#     alcança esses caminhos.
+#
+# Juntar os dois num só é o erro clássico de quem porta configuração de
+# Cloudflare Pages, e derruba metade da cobertura sem emitir aviso nenhum.
+
+# Bundles com hash no nome: o conteúdo nunca muda para uma mesma URL, então o
+# cache pode ser eterno. `immutable` evita até a revalidação condicional.
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
+  X-Content-Type-Options: nosniff
+
+# Imagens já otimizadas pelo Next, servidas por URL com parâmetros estáveis.
+/_next/image*
+  X-Content-Type-Options: nosniff
+
+# Assets do próprio repositório (logo, og-default, favicon). Mudam raramente e
+# sempre por deploy, então uma semana com revalidação é folgado sem ser eterno.
+/*.png
+  Cache-Control: public, max-age=604800
+  X-Content-Type-Options: nosniff
+
+/*.svg
+  Cache-Control: public, max-age=604800
+  X-Content-Type-Options: nosniff
+
+/*.ico
+  Cache-Control: public, max-age=604800
+  X-Content-Type-Options: nosniff
+
+# ads.txt precisa ser legível por crawler de rede de anúncio e mudar rápido
+# quando um vendedor é adicionado ou revogado — cache curto de propósito.
+/ads.txt
+  Cache-Control: public, max-age=3600
+  Content-Type: text/plain; charset=utf-8

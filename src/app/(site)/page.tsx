@@ -1,7 +1,9 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { ArticleCard } from "@/components/article/article-card";
+import { SiteJsonLd } from "@/components/seo/json-ld";
 import { Editorial } from "@/components/home/editorial";
 import { Masthead } from "@/components/home/masthead";
 import { Newsletter } from "@/components/home/newsletter";
@@ -25,7 +27,17 @@ import {
   listarPublicados,
 } from "@/lib/articles";
 import { CATEGORIAS, classesTom } from "@/lib/categories";
-import { ROTA_ARQUIVO } from "@/lib/seo";
+import { metadataHome, ROTA_ARQUIVO } from "@/lib/seo";
+
+/**
+ * A home era a ÚNICA página do site sem metadata — sem canônica, sem Open
+ * Graph, sem cartão do X e sem o `<link rel="alternate">` que anuncia o RSS.
+ * Ela caía no título padrão do root layout e mais nada. `metadataHome()` já
+ * existia pronta em `src/lib/seo.ts` desde a Fase 1.D; só nunca foi ligada.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  return metadataHome();
+}
 
 /**
  * Capa.
@@ -46,6 +58,13 @@ import { ROTA_ARQUIVO } from "@/lib/seo";
 export default function Home() {
   return (
     <>
+      {/* `WebSite` + `NewsMediaOrganization`, uma vez só no site inteiro.
+          O componente existia desde a Fase 1.D e nunca havia sido renderizado —
+          ou seja, o portal não declarava a própria organização em nenhuma
+          página, que é justamente o sinal de E-E-A-T que o Google procura num
+          veículo de notícia. Fica fora do `<Suspense>` porque não toca o banco. */}
+      <SiteJsonLd />
+
       <Masthead />
 
       <Suspense fallback={<DestaquesSkeleton />}>

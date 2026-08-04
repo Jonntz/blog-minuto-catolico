@@ -54,10 +54,22 @@ export async function inscrever(
       // Conflito é silencioso, e a resposta é a mesma dos dois lados.
       .onConflictDoNothing({ target: subscribers.email });
 
+    /**
+     * ⚠️ NÃO prometer e-mail de confirmação aqui.
+     *
+     * Esta mensagem dizia "confira sua caixa de entrada para confirmar a
+     * inscrição" — e **nenhum código envia e-mail** neste projeto. A coluna
+     * `confirmedAt` (`src/db/schema.ts`) existe e nunca foi escrita. Era a
+     * mesma classe de defeito da política de privacidade que declarava não ter
+     * publicidade: o site afirmando algo que não faz.
+     *
+     * Quando o double opt-in existir de verdade (o Cloudflare Email Routing
+     * destrava o remetente), esta mensagem volta a falar de confirmação — e aí
+     * será verdade.
+     */
     return {
       ok: true,
-      mensagem:
-        "Pronto — confira sua caixa de entrada para confirmar a inscrição.",
+      mensagem: "Pronto! Seu e-mail foi registrado.",
     };
   } catch (erro) {
     console.error(
