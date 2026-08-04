@@ -4,8 +4,9 @@
 > Se o contexto acabar no meio de algo, o "Próximo passo exato" no fim deste
 > arquivo é onde retomar.
 
-**Última atualização:** 2026-08-03 — provider de adaptação migrado para NVIDIA NIM
-(§2.6b) e conserto da capa sem liturgia (§2.5b).
+**Última atualização:** 2026-08-04 — SEO, segurança, performance e prontidão
+Adcash (§2.9–2.10). Publicidade SUSPENSA até haver zonas de banner e consentimento
+ligado.
 
 ---
 
@@ -72,6 +73,90 @@
 reescritos — não traduzidos literalmente. Nunca texto integral (`CLAUDE.md` §6).
 Bloco "Fonte: X" + link canônico obrigatórios. Protege de direito autoral e de
 penalização por conteúdo duplicado.
+
+### 2.9 🔴🔴 O SITE PUBLICAVA UMA DECLARAÇÃO FALSA (04/08)
+
+`/privacidade` afirmava por escrito, em página indexável, que o site **não usava
+cookies de rastreamento nem publicidade comportamental** e que **não havia
+rastreador de terceiro** — enquanto o `aclib` da Adcash rodava no `<head>` de
+TODAS as páginas, **inclusive na própria página de privacidade**.
+
+A lista `TRATAMENTOS` errava nas **duas direções ao mesmo tempo**: declarava
+`Cloudflare Web Analytics` (nunca instalado) e `Cloudflare Workers AI` (trocado
+por NVIDIA em `c8a7c53`), e **omitia a Adcash**.
+
+**Regra que passa a valer:** `TRATAMENTOS` é declaração jurídica, não
+documentação. Mexeu em provider, analytics ou anúncio ⇒ mexe nela **no mesmo
+commit**. O interruptor `PUBLICIDADE_ATIVA` existe para que texto legal e
+comportamento não possam divergir.
+
+### 2.9b `runAutoTag` é pop-under com anti-adblock — descartado (04/08)
+
+Verificado na documentação da Adcash: `aclib.runAutoTag` é o pacote **4-em-1**
+— Pop-Under, In-Page Push, Interstitial e Video Slider — **com anti-adblock**.
+Havia DUAS zonas no mesmo documento (`pcewqvqovo`, `xlwsd0rw7w`), o que dispara
+dois pop-unders por sessão: configuração errada, não estratégia.
+
+Isso compete diretamente com a meta nº 1 do `CLAUDE.md` §1:
+- pop-under e intersticial estão na lista de menos preferidos do **Coalition for
+  Better Ads** — o Chrome filtra anúncios de sites reincidentes;
+- intersticial intrusivo é fator de **rebaixamento no Google mobile**;
+- as políticas do **Google News Publisher Center** restringem anúncio intrusivo.
+
+**Decisão do usuário: banner/native com slot dimensionado.** Buscar aprovação no
+Google News *e* rodar pop-under são objetivos mutuamente hostis.
+
+⚠️ As zonas antigas não servem — banner exige zonas novas no painel da Adcash, e
+a chamada passa a ser `aclib.runBanner`.
+
+### 2.9c Consentimento: opt-in uniforme, e o motivo é TÉCNICO (04/08)
+
+Modelo escolhido: opt-in para todos, Brasil e exterior. A alternativa geo-aware
+(opt-in só na UE) daria mais receita, mas exige ler `cf-ipcountry` no servidor —
+o que **personaliza o HTML e inviabiliza cachear a página na borda**, a maior
+alavanca de performance disponível. Com opt-in uniforme o HTML é idêntico para
+todo mundo e a decisão vive 100% no cliente.
+
+Implementação: `src/lib/consent.ts` (zod sobre o `localStorage` — CLAUDE.md §8
+vale para tudo que é desserializado, não só env; valor ilegível ⇒ "pendente" ⇒
+não carrega anúncio), `consent-store.ts` com `useSyncExternalStore` (Context
+obrigaria a tornar o layout cliente e mataria o PPR), banner `fixed` (em fluxo
+normal empurraria conteúdo = CLS) e `Adcash` por `next/script` com
+`strategy="afterInteractive"` e `runBanner` no `onReady` — nunca `<script>`
+inline, pela lição do §5c.
+
+### 2.9d 🐛 PPR: `notFound()` dentro de `<Suspense>` não muda o status (04/08)
+
+`/noticias?pagina=99`, num arquivo de 4 páginas, devolvia **200 + conteúdo da
+última página + canônica auto-referente `?pagina=99`** — família infinita de
+URLs indexáveis, armadilha de rastreamento clássica.
+
+Pôr `notFound()` no corpo **não resolveu**, e a causa é o PPR: a casca sai com
+status 200 **antes** de o `<Suspense>` resolver, então quando o `notFound()`
+dispara o cabeçalho já foi enviado. Verificado em produção: o corpo mostrava o
+404 e o status continuava 200.
+
+**O sinal tem de sair em `generateMetadata`**, que roda antes do streaming.
+`listarPaginado` é `"use cache"`, então consultar de lá não quebra o PPR nem
+custa segunda ida ao banco — é a mesma chave de cache do corpo. Confirmado em
+produção: `?pagina=99` → `noindex, follow`; `?pagina=2` → canônica normal.
+
+**Vale para qualquer página com PPR:** decisão que precisa virar status HTTP ou
+meta tag não pode morar dentro de `<Suspense>`.
+
+### 2.9e Canônica `localhost` em produção — e por que o `warn` não bastou (04/08)
+
+As cinco institucionais foram a produção com
+`<link rel="canonical" href="http://localhost:3000/sobre">`. Canônica apontando
+para localhost manda o Google **desindexar a URL real**.
+
+Causa: são prerenderizadas no build, e `getSiteUrlSync()` lê
+`process.env.SITE_URL`, que só existe em runtime (`vars` do `wrangler.jsonc`).
+
+Conserto: `.env.production` versionado na raiz. **E `getSiteUrlSync` passou a
+LANÇAR** quando `NODE_ENV === "production"` — já havia um `console.warn` ali, e
+o defeito chegou ao ar assim mesmo. Aviso em log de build não é lido por
+ninguém; build que produz canônica errada tem de quebrar.
 
 ### 2.5b 🔴 A CAPA FICOU SEM LITURGIA — causa raiz achada em 03/08/2026
 
@@ -561,6 +646,44 @@ e o HTML completo continua disponível para rastreadores.
 `typecheck` limpo, `build` OK com 34 páginas, `/` → 200 (120.926 bytes),
 `/noticia/<slug>` → 200, `/categoria/liturgia` → 200, `/categoria/brasil` → 404,
 `/noticia/inexistente` → 404. Capa saiu como `◐ Partial Prerender`.
+
+---
+
+## 2.10 Cache durável + tarefas de painel Cloudflare (04/08)
+
+### O cache que não existia
+
+`open-next.config.ts` era `defineCloudflareConfig()` **sem argumento**. Sob
+`cacheComponents: true` isso significa **nenhum store durável para `"use
+cache"`**: os quatro perfis de `cacheLife` e todo o `revalidate.ts` só valiam
+dentro do isolate vivo, e cada isolate frio refazia as consultas no D1.
+
+**KV + D1, não R2.** O R2 foi descartado no `wrangler.jsonc` por exigir método
+de pagamento mesmo no tier gratuito; **KV e D1 não exigem**. Trade-off: KV é
+eventualmente consistente (~60s), irrelevante para um portal cuja matéria já
+espera minutos na fila.
+
+Recursos criados: KV `9f8ec88137174d95ba4f85404ce750df`, D1
+`minuto-eclesiastico-cache` (`47f55bb6-…`). A tabela `revalidations` **não é
+criada em runtime** — o adapter só imprime o SQL; foi criada à mão.
+
+**Verificado em produção:** 29 chaves no KV, 5 linhas em `revalidations`.
+
+⚠️ Este deploy DEVERIA ter saído isolado (era o risco R1 do plano) e acabou
+junto do conserto de paginação, porque um `git add -A` o varreu. Saiu bem, mas
+a disciplina vale: mudança de camada de cache merece deploy próprio.
+
+### Pendente no painel — nenhuma exige código
+
+| # | Tarefa | Por quê |
+|---|---|---|
+| 1 | **WAF: bloquear `/api/cron/*`** da internet pública | Maior ganho de segurança do plano, zero linha de código. **Não quebra o cron**: `workers/scheduler` chama a app por *service binding*, que não atravessa a borda. |
+| 2 | **Email Routing** → `contato@minutocatolico.com.br` | Destrava `PENDENTE.email`, as caixas de "pendente" e a aprovação Adcash. |
+| 3 | SSL/TLS: Always Use HTTPS, TLS mín. 1.2, HSTS com `max-age` **curto** primeiro | HSTS no painel é reversível em segundos; em código gruda no navegador até expirar. |
+| 4 | **Cache Rules** para HTML de `/`, `/noticia/*`, `/categoria/*`, `/noticias` | Viabilizado pelo opt-in uniforme. ⚠️ **Bypass obrigatório** para `/api/*`, os feeds e requisições com header `Next-Action` (Server Actions) — senão o POST da newsletter pode ser servido de cache. |
+| 5 | **Tiered Cache** | Gratuito, reduz origin fetches. |
+| 6 | **Rate Limiting**: `http.request.method eq "POST" and len(http.request.headers["next-action"]) > 0` | Server Action não tem path próprio; é assim que se protege a newsletter na borda. |
+| 7 | **Bot Fight Mode** | ⚠️ Conferir Security Events por 24h que não bloqueia Googlebot, Bingbot nem o `MinutoCatolicoBot`. |
 
 ---
 
@@ -1301,6 +1424,24 @@ ambos corrigiram erros reais e distintos. O que falta é só a query acima.
 
 ## 6. Próximo passo exato
 
+> **ATUAL (04/08)** — SEO, segurança, performance e prontidão Adcash entregues
+> (§2.9 a §2.9e, §2.10). **Publicidade SUSPENSA** (`PUBLICIDADE_ATIVA = false`).
+>
+> **Bloqueadores externos, que nenhuma engenharia resolve:**
+> 1. `PENDENTE` em `src/lib/institucional.ts` (e-mail, entidade, localidade)
+>    continua `null`. Caminho mais barato: **Cloudflare Email Routing**
+>    (gratuito) para criar `contato@minutocatolico.com.br`. `entidade` aceita
+>    pessoa física — nome completo basta, sem CNPJ.
+> 2. `public/ads.txt` NÃO foi criado de propósito: um ads.txt que existe e não
+>    lista vendedor nenhum significa "ninguém autorizado a vender este
+>    inventário" e **bloquearia** a monetização. Precisa da linha real do painel
+>    da Adcash.
+> 3. Zonas de **banner** na Adcash (as antigas eram AutoTag) → preencher `ZONAS`
+>    em `src/components/consent/consent-gate.tsx` e virar `PUBLICIDADE_ATIVA`.
+> 4. Substituir `public/logo.png` e `public/og-default.png` (placeholders).
+>
+> **Tarefas de painel Cloudflare pendentes** (§2.10).
+>
 > **ATUAL (03/08, fim do dia)** — pipeline PUBLICANDO pela NVIDIA. Nada
 > bloqueante. Deploy é automático por push na `main` (Workers Builds); o worker
 > `workers/scheduler/` é separado e precisa de deploy próprio.
