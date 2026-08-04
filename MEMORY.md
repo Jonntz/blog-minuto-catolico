@@ -109,6 +109,44 @@ Google News *e* rodar pop-under são objetivos mutuamente hostis.
 ⚠️ As zonas antigas não servem — banner exige zonas novas no painel da Adcash, e
 a chamada passa a ser `aclib.runBanner`.
 
+**Desfecho (04/08).** O painel da Adcash chama o formato de **Display**, não de
+"Banner" — foi por isso que ele não foi encontrado de primeira, e no meio do
+caminho chegou a ser criada uma zona Pop-Under (`11907602`) como substituto.
+Ela e a AutoTag (`si5mdwejfc`) **não são usadas e devem ser apagadas**: AutoTag
+já contém pop-under, então rodar as duas juntas serve dois pop-unders por
+sessão sem capping compartilhado — o mesmo defeito das duas zonas originais, em
+forma nova.
+
+Zonas de display em uso: **`11907650` (728×90)** e **`11907658` (300×250)**.
+
+### 2.9b′ 🐛 A publicidade quebraria em navegação client-side (04/08)
+
+Encontrado ao ligar as zonas, antes de ir a produção. O `ConsentGate` mora em
+`src/app/(site)/layout.tsx` e **não desmonta ao navegar** — em navegação
+client-side o `<Script>` continua montado e o `onReady` não dispara de novo.
+Com a lista de zonas centralizada no gate, `runBanner` rodaria **uma vez só**,
+para os slots existentes na primeira página carregada; todo slot alcançado por
+navegação ficaria vazio para sempre. Em SPA isso é a maioria das
+visualizações.
+
+Inversão adotada: o carregador (`ads/adcash.tsx`) só avisa que a biblioteca
+chegou (`ads/aclib.ts`, `useSyncExternalStore` como no consent-store), e **cada
+slot ativa a própria zona ao montar** (`ads/ad-zone.tsx`). O `AdSlot` continua
+Server Component — só a folha que não desenha pixel é cliente (CLAUDE.md §3).
+
+Três decisões que parecem detalhe e não são:
+
+1. **`zoneId`, altura e breakpoint moram no mesmo objeto** (`ads/zonas.ts`).
+   Separados, divergem: trocar o `zoneId` de um slot por zona de outro tamanho
+   corta o criativo, e nenhum teste pega.
+2. **A faixa 728×90 é `hidden md:flex`, e o JS repete a mesma media query.**
+   Rodar `runBanner` dentro de contêiner `display:none` gera impressão não
+   visível — tráfego inválido para a rede. CSS e JS não podem discordar.
+3. **O espaço é reservado mesmo sem consentimento.** Mostrar o bloco só após o
+   opt-in pareceria mais elegante e seria pior: quem já aceitou numa visita
+   anterior veria o bloco surgir depois da hidratação, longe de qualquer
+   clique, e isso conta inteiro no CLS.
+
 ### 2.9c Consentimento: opt-in uniforme, e o motivo é TÉCNICO (04/08)
 
 Modelo escolhido: opt-in para todos, Brasil e exterior. A alternativa geo-aware

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
+import { AdSlot } from "@/components/ads/ad-slot";
 import { ArticleCard } from "@/components/article/article-card";
 import { SiteJsonLd } from "@/components/seo/json-ld";
 import { Editorial } from "@/components/home/editorial";
@@ -78,6 +79,13 @@ export default function Home() {
       <Suspense fallback={null}>
         <FaixaEditorial />
       </Suspense>
+
+      {/* Entre o fim do conteúdo e a newsletter. A faixa 728×90 só existe de
+          `md` para cima (ver `src/components/ads/zonas.ts`): no celular ela
+          seria cortada, e criativo cortado é impressão que a rede cobra e o
+          leitor não vê. No celular a monetização fica na página de matéria,
+          que é onde está o volume de um portal de notícias. */}
+      <AdSlot formato="faixa" id="anuncio-capa" className="mt-20 px-4" />
 
       {/* Estático: não depende de dado nenhum, então é prerenderizado. */}
       <Newsletter />

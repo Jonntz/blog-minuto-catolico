@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { AdSlot } from "@/components/ads/ad-slot";
 import { ArticleBody } from "@/components/article/article-body";
 import { ArticleHeader } from "@/components/article/article-header";
 import { RelatedArticles } from "@/components/article/related-articles";
@@ -76,6 +77,13 @@ async function Materia({ params }: Props) {
       </div>
 
       <SourceNote artigo={artigo} />
+
+      {/* Depois da atribuição, nunca antes: a fonte original é requisito
+          editorial (CLAUDE.md §6) e não pode ficar abaixo de um anúncio, nem
+          ser confundida com ele. Aqui o leitor já terminou a matéria — é a
+          posição de maior valor que não interrompe leitura. */}
+      <AdSlot formato="retangulo" id="anuncio-materia" className="mt-12" />
+
       <RelatedArticles artigos={relacionados} />
     </>
   );

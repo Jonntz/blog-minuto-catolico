@@ -1,4 +1,7 @@
+import { PUBLICIDADE_ATIVA } from "@/lib/institucional";
 import { cn } from "@/lib/utils";
+import { AtivarZona } from "./ad-zone";
+import { FORMATOS, type FormatoAnuncio } from "./zonas";
 
 /**
  * Espaço reservado para um anúncio.
@@ -12,9 +15,16 @@ import { cn } from "@/lib/utils";
  * projeto já paga esse cuidado em `ArticleMedia` (que reserva proporção) e no
  * `LiturgyPanelSkeleton` (que reserva a silhueta dos cartões).
  *
- * Consequência aceita: quando não há anúncio para exibir — leitor recusou,
- * rede sem preenchimento — sobra um espaço vazio. É o preço de não empurrar
- * conteúdo, e é por isso que o slot é discreto e rotulado, em vez de invisível.
+ * É por isso que o espaço é reservado **independentemente do consentimento**, e
+ * não só para quem aceitou. A alternativa — mostrar o bloco só após o opt-in —
+ * pareceria mais elegante e seria pior: quem já aceitou numa visita anterior
+ * veria o bloco aparecer alguns milissegundos depois da hidratação, longe de
+ * qualquer clique, e isso conta inteiro no CLS.
+ *
+ * Consequência aceita: quando não há anúncio para exibir — leitor recusou, zona
+ * ainda em aprovação, rede sem preenchimento — sobra um espaço vazio. É o preço
+ * de não empurrar conteúdo, e é por isso que o slot é discreto e rotulado, em
+ * vez de invisível. Com `PUBLICIDADE_ATIVA` em `false` o slot some por completo.
  *
  * ## Por que "Publicidade" escrito
  *
@@ -23,31 +33,31 @@ import { cn } from "@/lib/utils";
  * leitor confia, mais ainda. `aria-label` no contêiner para quem navega por
  * leitor de tela saber que pode pular.
  */
-
-/** Formatos disponíveis. A altura de cada um é contrato com o CLS. */
-export type FormatoAnuncio = "retangulo" | "faixa";
-
-const ALTURA: Readonly<Record<FormatoAnuncio, string>> = {
-  /** 300×250 medium rectangle — o padrão de coluna lateral e meio de matéria. */
-  retangulo: "min-h-[250px]",
-  /** 320×100 no celular, 728×90 a partir de `sm`. Faixa entre seções. */
-  faixa: "min-h-[100px] sm:min-h-[90px]",
-};
-
 export function AdSlot({
   formato,
   id,
   className,
 }: {
   formato: FormatoAnuncio;
-  /** Alvo do `runBanner` da Adcash. Precisa ser único na página. */
+  /** Alvo do `runBanner`. Precisa ser único na página. */
   id: string;
   className?: string;
 }) {
+  if (!PUBLICIDADE_ATIVA) return null;
+
+  const { altura, largura, classesDeExibicao } = FORMATOS[formato];
+
   return (
     <aside
       aria-label="Publicidade"
-      className={cn("flex flex-col items-center gap-1.5", className)}
+      className={cn(
+        "mx-auto w-full flex-col items-center gap-1.5",
+        largura,
+        // Depois da largura: em `cn`, a última classe conflitante vence, e é
+        // aqui que se decide se o slot existe neste breakpoint.
+        classesDeExibicao,
+        className,
+      )}
     >
       <span
         aria-hidden="true"
@@ -59,9 +69,10 @@ export function AdSlot({
         id={id}
         className={cn(
           "flex w-full items-center justify-center overflow-hidden rounded-[14px] bg-surface-2",
-          ALTURA[formato],
+          altura,
         )}
       />
+      <AtivarZona formato={formato} blockId={id} />
     </aside>
   );
 }

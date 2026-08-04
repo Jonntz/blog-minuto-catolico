@@ -17,7 +17,7 @@
  */
 
 /** Data da última revisão das páginas institucionais (exibida ao leitor). */
-export const ATUALIZADO_EM = "3 de agosto de 2026";
+export const ATUALIZADO_EM = "4 de agosto de 2026";
 
 /**
  * ✅ PREENCHIDO EM 04/08/2026. O nome `PENDENTE` ficou por compatibilidade com
@@ -128,7 +128,7 @@ export const TRATAMENTOS = [
  * texto legal e comportamento nunca possam divergir — foi exatamente essa
  * divergência que criou o problema de 03/08/2026.
  */
-export const PUBLICIDADE_ATIVA: boolean = false;
+export const PUBLICIDADE_ATIVA: boolean = true;
 
 /**
  * O que fica gravado no aparelho do leitor.
