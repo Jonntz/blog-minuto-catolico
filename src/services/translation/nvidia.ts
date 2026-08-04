@@ -227,7 +227,17 @@ const OPCOES_VERIFICACAO: OpcoesChamada = {
   maxTokens: 2000,
   // Julgamento não é lugar para criatividade.
   temperatura: 0,
-  timeoutMs: 120_000,
+  /**
+   * 150s, não 120s. Um `TimeoutError` real foi observado aqui em 03/08/2026, e
+   * o custo do teto curto é assimétrico: a adaptação JÁ foi paga quando a
+   * verificação começa, então estourar aqui joga fora as duas chamadas e adia o
+   * artigo. Esperar 30s a mais é mais barato que refazer tudo.
+   *
+   * Se o timeout voltar a aparecer com frequência, o caminho não é subir de
+   * novo — é trocar `NVIDIA_VERIFY_MODEL` por um modelo menor de OUTRA família
+   * que não Nemotron (para preservar o juiz ≠ réu), como `google/gemma-4-31b-it`.
+   */
+  timeoutMs: 150_000,
 };
 
 // ---------------------------------------------------------------------------

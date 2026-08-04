@@ -570,13 +570,42 @@ export function parsearVerificacao(bruto: unknown): VerificacaoFactual | null {
   const json = extrairJson(bruto);
   if (json === null) return null;
 
-  const r = esquemaVerificacao.safeParse(json);
+  const r = esquemaVerificacao.safeParse(normalizarChavesVeredito(json));
   if (!r.success) return null;
 
   return filtrarOmissoes({
     consistente: r.data.consistente,
     divergencias: r.data.divergencias,
   });
+}
+
+/**
+ * Aceita o JSON que o modelo REALMENTE devolve, não só o que pedimos.
+ *
+ * Duas tolerâncias, ambas vindas de saída observada em produção:
+ *  - chaves em caixa alta (`VEREDITO`, `DIVERGENCIAS`), porque é o vocabulário
+ *    que o próprio prompt usa e o modelo o reaproveita dentro do JSON;
+ *  - `veredito` como STRING (`"CONSISTENTE"`), e não `consistente` booleano.
+ *
+ * O que NÃO se afrouxa: qualquer valor que não seja reconhecidamente
+ * "consistente" vira `false`. Ambiguidade continua reprovando.
+ */
+function normalizarChavesVeredito(json: unknown): unknown {
+  if (typeof json !== "object" || json === null || Array.isArray(json)) return json;
+
+  const entradas = Object.entries(json as Record<string, unknown>);
+  const porChave = new Map(entradas.map(([k, v]) => [k.trim().toLowerCase(), v]));
+
+  const divergencias = porChave.get("divergencias") ?? porChave.get("divergencia");
+
+  const bruto = porChave.get("consistente") ?? porChave.get("veredito");
+  const consistente =
+    typeof bruto === "string" ? /^\s*consistente\s*$/i.test(bruto) : bruto;
+
+  return {
+    consistente,
+    divergencias: Array.isArray(divergencias) ? divergencias : [],
+  };
 }
 
 /**
@@ -595,12 +624,27 @@ function parsearVeredito(bruto: unknown): VerificacaoFactual | null {
     .replace(/\s*```\s*$/, "")
     .trim();
 
-  const mVeredito = /^[*_\s>#-]*VEREDITO\s*:\s*(\w+)/im.exec(texto);
+  /**
+   * As aspas são opcionais nos DOIS lados — e não é preciosismo.
+   *
+   * Medido em produção em 03/08/2026: o checador respondeu
+   * `{ "VEREDITO": "CONSISTENTE", "DIVERGENCIAS": [] }` — um veredito
+   * PERFEITO, que foi descartado. A âncora `^` só tolerava `[*_\s>#-]` antes do
+   * marcador, e a linha do JSON começa com `"`. O fallback de JSON também não
+   * salvava, porque o esquema espera as chaves minúsculas `consistente` /
+   * `divergencias` e o modelo usou o vocabulário do PRÓPRIO prompt, em caixa
+   * alta. Resultado: artigo aprovado virava adiamento eterno.
+   *
+   * A lição vale para todo parser de saída de modelo aqui: o modelo mistura os
+   * formatos que você mostrou a ele. Se o prompt fala em `VEREDITO`, ele vai
+   * usar `VEREDITO` — inclusive dentro de JSON.
+   */
+  const mVeredito = /^[*_\s>#\-"']*"?VEREDITO"?\s*:\s*["']?\s*(\w+)/im.exec(texto);
   if (!mVeredito) return null;
 
   const consistente = /^consistente$/i.test(mVeredito[1] ?? "");
 
-  const mLista = /^[*_\s>#-]*DIVERG[ÊE]NCIAS?\s*:/im.exec(texto);
+  const mLista = /^[*_\s>#\-"']*"?DIVERG[ÊE]NCIAS?"?\s*:/im.exec(texto);
   const divergencias = mLista
     ? texto
         .slice(mLista.index + mLista[0].length)
