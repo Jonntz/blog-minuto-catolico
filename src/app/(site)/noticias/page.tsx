@@ -10,7 +10,11 @@ import { Container } from "@/components/ui/container";
 import { Reveal } from "@/components/ui/reveal";
 import { categoriasComConteudo, listarPaginado } from "@/lib/articles";
 import { getCategoria } from "@/lib/categories";
-import { metadataArquivo, rotaArquivo } from "@/lib/seo";
+import {
+  metadataArquivo,
+  metadataNaoEncontrado,
+  rotaArquivo,
+} from "@/lib/seo";
 
 /** Cards por página. Três colunas em desktop, então múltiplo de 3 e 2. */
 const POR_PAGINA = 12;
@@ -23,10 +27,35 @@ export async function generateMetadata({
   searchParams,
 }: Props): Promise<Metadata> {
   const { categoria, pagina } = await searchParams;
-  return metadataArquivo({
-    categoria: categoriaValida(categoria),
-    pagina: numeroDePagina(pagina),
+  const slug = categoriaValida(categoria);
+  const numero = numeroDePagina(pagina);
+
+  /**
+   * Página além do fim: `noindex`.
+   *
+   * O `notFound()` no corpo da página (abaixo) NÃO resolve isto sozinho, e a
+   * razão é o PPR: a casca é enviada com status 200 antes de o `<Suspense>`
+   * resolver, então quando o `notFound()` dispara o cabeçalho já saiu. Verificado
+   * em produção — `?pagina=99` devolvia 200 com o conteúdo do 404 e, pior, uma
+   * canônica auto-referente para `?pagina=99`. Ou seja: uma família infinita de
+   * URLs distintas, todas indexáveis.
+   *
+   * `generateMetadata` roda ANTES do streaming, então é aqui que o sinal para o
+   * robô tem de ser emitido. `listarPaginado` é `"use cache"`, então consultar
+   * daqui não quebra o PPR nem custa uma segunda ida ao banco — é a mesma chave
+   * de cache que o corpo vai usar.
+   */
+  const { totalDePaginas } = await listarPaginado({
+    pagina: numero,
+    porPagina: POR_PAGINA,
+    categoria: slug,
   });
+
+  if (numero > 1 && numero > totalDePaginas) {
+    return metadataNaoEncontrado();
+  }
+
+  return metadataArquivo({ categoria: slug, pagina: numero });
 }
 
 /**
