@@ -250,6 +250,54 @@ notícia nova não é atrasada.
 só o resultado. Sem isso, ordenação determinística + falha determinística = fila
 travada em silêncio.
 
+### 2.6f 🐛 VEREDITO BOM SENDO DESCARTADO — e por que o parser mentia (03/08)
+
+O checador respondeu, textualmente:
+
+```json
+{ "VEREDITO": "CONSISTENTE", "DIVERGENCIAS": [] }
+```
+
+Veredito **perfeito** — e o artigo foi adiado assim mesmo, para sempre, porque a
+falha era determinística. Duas barreiras ao mesmo tempo:
+
+1. `parsearVeredito` ancora em `^` e só tolerava `[*_\s>#-]` antes do marcador.
+   A linha do JSON começa com `"`.
+2. O fallback de JSON exige as chaves minúsculas `consistente`/`divergencias`.
+   O modelo usou o vocabulário do PRÓPRIO prompt (`VEREDITO`, `DIVERGENCIAS`),
+   em caixa alta.
+
+**Lição que vale para todo parser de saída de modelo aqui:** o modelo MISTURA os
+formatos que você mostrou a ele. Se o prompt fala em `VEREDITO`, ele usa
+`VEREDITO` — inclusive dentro de JSON que você não pediu. Tolerar a forma sem
+afrouxar o conteúdo: valor não reconhecido continua reprovando.
+
+**Como isto só apareceu:** o adiamento não gravava nada no banco, e a captura de
+`wrangler tail` ao vivo não trouxe nada (tentada duas vezes). Foi preciso gravar
+o motivo do adiamento em `validation_errors` com prefixo `adiado/` — os dois
+caminhos de adiamento gravam, e a linha segue `draft`, invisível no site.
+
+### 2.6g Adiamentos que SOBRAM são da NVIDIA, não nossos (03/08)
+
+Com o parser consertado, as causas restantes de adiamento são todas de
+infraestrutura da fonte:
+
+```
+adiado/indisponivel: HTTP 524: error code: 524                       (×4)
+adiado/indisponivel: HTTP 503: ResourceExhausted:
+                     Worker local total request limit reached (18/16) (×1)
+```
+
+O 503 é o NIM dizendo que a instância do modelo está saturada — congestão do
+tier gratuito. **Atenção ao medir:** essa taxa foi observada disparando 8
+execuções em sequência; o cron real faz 5 itens a cada 15 min. Parte da
+saturação foi carga do próprio teste.
+
+Classificação está certa: 524/503 ⇒ `indisponivel` ⇒ transitório ⇒ o artigo
+continua `draft` e volta na fila depois do cooldown. **Não** acrescentar retry
+imediato aqui — insistir em serviço saturado piora a saturação; recuar e deixar
+o próximo cron pegar é o comportamento correto.
+
 ### 2.6c Rendimento da fila — medido em 03/08 (o gargalo NÃO é o modelo)
 
 Consulta a `validation_errors` dos reprovados recentes. A distribuição importa
@@ -261,12 +309,12 @@ mais que o total, porque cada causa pede uma ação diferente:
 | `proporcao` (adaptado passou de 60% do original) | 2 de 6 | Aderência do modelo |
 | `verificacao_factual` (falso positivo) | 1 de 6 | Ruído do checador |
 
-- **`pre_voo` é o maior balde e o modelo não tem culpa.** `MIN_CHARS_ORIGINAL`
-  é `700 / 0.4 = 1750` caracteres, e os originais reprovados tinham 730, 1642 e
-  **49** caracteres. A causa raiz está na ingestão: o schema só guarda
-  `source_excerpt`, e **`extrairCorpoArtigo()` (`ingestion/article-body.ts`) só é
-  usado pelo Sign of the Cross** — o EWTN entra apenas com o excerpt do feed.
-  Estender a busca de corpo completo ao EWTN é o que destrava esse balde.
+- **⚠️ CORREÇÃO: `pre_voo` NÃO é o gargalo.** A amostra de 6 acima enganou. Sobre
+  a fila INTEIRA, **86 dos 93 rascunhos passam no pré-voo** (EWTN 62/66, SOTC
+  24/27) — o EWTN traz `content:encoded` (corpo integral, média ~4.000 chars) e
+  o SOTC já é enriquecido por `extrairCorpoArtigo()`. **Não há trabalho de
+  ingestão a fazer aqui.** Lição de método: distribuição de amostra recente ≠
+  distribuição da fila; conferir o agregado antes de propor obra.
 - **`proporcao`:** o modelo escreve mais que o pedido. Medido: original de 1978
   chars → o prompt pediu 791–989 → o modelo entregou **1714** (86,7%, teto 60%).
   Outro: pedido ~770–962, entregue 1256 (65,3%). As janelas são viáveis; o
@@ -1253,17 +1301,24 @@ ambos corrigiram erros reais e distintos. O que falta é só a query acima.
 
 ## 6. Próximo passo exato
 
-> **ATUAL (03/08)** — bloqueante único para a adaptação voltar a rodar:
-> **`wrangler secret put NVIDIA_API_KEY`** (chave gratuita em
-> https://build.nvidia.com), na app. Sem ela `/api/cron/adapt` falha alto e
-> explícito — de propósito, ver §2.6b. Depois: `npm run cf:deploy` e
-> `wrangler deploy --config workers/scheduler/wrangler.jsonc` (o segundo é
-> obrigatório: a cadência do cron da liturgia mudou, §2.5b).
+> **ATUAL (03/08, fim do dia)** — pipeline PUBLICANDO pela NVIDIA. Nada
+> bloqueante. Deploy é automático por push na `main` (Workers Builds); o worker
+> `workers/scheduler/` é separado e precisa de deploy próprio.
 >
-> Fila em 03/08 antes do deploy: 94 `draft`, 55 `failed_validation`, 27
-> publicados. O `requeueTransitorios` devolve à fila só o que reprovou por FORMA
-> e dentro de 3 dias — o resto do backlog de `failed_validation` continua parado
-> por decisão, não por bug.
+> Progresso do dia: 27 → **36 publicados**, fila 94 → 73. Dos itens já tocados
+> pelo Nemotron: 9 publicados, 20 reprovados, 7 adiados.
+>
+> **Aberto, em ordem de valor:**
+> 1. **`proporcao` ainda é a maior reprovação.** O orçamento em palavras (§2.6c)
+>    e a 2ª tentativa reduziram, não zeraram — houve caso de 95% do original com
+>    11 parágrafos. Próximo passo se incomodar: `NVIDIA_MODEL` para
+>    `nemotronUltra`, ou pedir contagem de parágrafos explícita no formato.
+> 2. **Falso positivo do checador** com sigla: `"SSPX"` vs
+>    `"Society of Saint Pius X"` conta como nome próprio diferente em
+>    `ehRuidoEstrutural`. Uma tabela de siglas ↔ extenso resolveria.
+> 3. Liturgia de agosto: esperando o Salve Maria publicar. Cron diário pega
+>    sozinho; `/api/health` mostra `folgaDias` negativo até lá.
+> 4. Trocar os placeholders `public/logo.png` e `public/og-default.png`.
 
 > **(29/07, 04:00 UTC)** — Fases 0–2 entregues e em produção. Aberto:
 > 1. Confirmar que o cron dispara sozinho após o service binding (verificação
