@@ -19,13 +19,27 @@
 /** Data da última revisão das páginas institucionais (exibida ao leitor). */
 export const ATUALIZADO_EM = "3 de agosto de 2026";
 
+/**
+ * ✅ PREENCHIDO EM 04/08/2026. O nome `PENDENTE` ficou por compatibilidade com
+ * os pontos que já o importam; o que ele guarda é a identificação do
+ * responsável, e o tipo segue `string | null` para que as caixas de aviso
+ * voltem sozinhas se algum dia um campo for esvaziado.
+ *
+ * O e-mail é real e atendido: `contato@minutocatolico.com.br` roteia pelo
+ * Cloudflare Email Routing (MX, SPF e DKIM verificados em 04/08). A LGPD
+ * art. 18 exige que o canal do titular FUNCIONE — publicar endereço que
+ * ninguém lê seria pior do que a caixa de "pendente" que havia antes.
+ */
 export const PENDENTE = {
-  /** E-mail de contato público. Ex.: "contato@minutocatolico.com.br". */
-  email: null as string | null,
-  /** Razão social ou nome do responsável, e CNPJ/CPF se houver. */
-  entidade: null as string | null,
+  /** E-mail de contato público. */
+  email: "contato@minutocatolico.com.br" as string | null,
+  /**
+   * Responsável. Pessoa física: a LGPD não exige CNPJ para que alguém seja
+   * controlador de dados, e inventar razão social seria falso.
+   */
+  entidade: "Jonatas Sousa Monteiro" as string | null,
   /** Cidade/UF de operação — a LGPD pede a base territorial. */
-  localidade: null as string | null,
+  localidade: "São Paulo/SP" as string | null,
 } as const;
 
 export const SOBRE = {
