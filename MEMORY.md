@@ -223,6 +223,24 @@ o nome da coluna tem de ser qualificado (`articles.slug`). Concatenar a cadeia
 antes de testar reintroduz o bug ao contrário: violação de `dedupe_hash` seria
 lida como colisão de slug e **duplicaria matéria já publicada**.
 
+**⚠️ Consertar só o detector NÃO bastava, e por pouco não virou defeito pior.**
+Com a desambiguação viva, o item entraria com slug sufixado — ou seja, **a mesma
+notícia publicada duas vezes, em URLs diferentes**. Conteúdo duplicado é
+justamente o que o CLAUDE.md §6 manda evitar. Confirmado no D1 remoto: existe
+uma linha com a URL antiga (`…tailor-says-returning…`) e o mesmo slug que o item
+novo (`…tailor-returning…`) tentava usar.
+
+Desenho final: no `catch`, **antes** de desambiguar, `adotarUrlNova()` verifica
+se a linha que ocupa o slug tem **a mesma fonte e o mesmo título**. Se tem, é a
+mesma matéria com endereço novo ⇒ atualiza a proveniência da linha existente
+(`dedupeHash`, `sourceUrl`, `sourceGuid`) e devolve `"atualizado"`. O `slug` não
+muda: a matéria pode estar publicada nele, e trocá-lo quebraria links e a
+canônica que o Google já conhece.
+
+O teste de título não é redundante com a colisão de slug — `gerarSlug` remove
+acento e pontuação, então dois títulos diferentes da mesma fonte podem normalizar
+para o mesmo slug. Aí são matérias distintas e o sufixo é a resposta certa.
+
 **Lição de observabilidade, que custou a investigação inteira:** o log gravava
 `erro.message`, ou seja, o embrulho — SQL inteiro, parâmetros inteiros, zero
 pista da falha real. Diagnosticar exigiu ler o código em vez do log. `gravarItens`

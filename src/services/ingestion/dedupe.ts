@@ -125,6 +125,79 @@ async function refrescarSeMudou(
   return atualizados.length > 0;
 }
 
+/**
+ * A fonte reescreveu a URL de uma matéria que já temos?
+ *
+ * ## O caso real que criou esta função (05/08)
+ *
+ * A SOTC trocou `…tailor-says-returning…` por `…tailor-returning…` na URL de um
+ * artigo já ingerido. Como o `dedupeHash` deriva da URL canônica, o hash mudou;
+ * como o slug deriva do TÍTULO, que não mudou, o slug colidiu.
+ *
+ * Desambiguar com sufixo — o outro ramo do `catch` — resolveria o erro e criaria
+ * **duas matérias idênticas no site, em URLs diferentes**. Isso é conteúdo
+ * duplicado: exatamente o que o CLAUDE.md §6 manda evitar, e o oposto do que a
+ * desambiguação existe para fazer.
+ *
+ * ## O discriminador
+ *
+ * Mesma fonte **e** mesmo título ⇒ é a mesma matéria, com endereço novo.
+ *
+ * O teste de título não é redundante com a colisão de slug: `gerarSlug` remove
+ * acento e pontuação, então dois títulos diferentes da mesma fonte podem
+ * normalizar para o mesmo slug. Aí são matérias distintas de verdade, e o sufixo
+ * é a resposta certa.
+ *
+ * O `slug` NÃO é atualizado de propósito. A matéria pode já estar publicada
+ * nele; trocá-lo quebraria links e a canônica que o Google já conhece. Muda a
+ * proveniência, não o endereço.
+ */
+async function adotarUrlNova(
+  db: Db,
+  item: ItemNormalizado,
+  slug: string,
+  dedupeHash: string,
+  contentHash: string,
+  agora: number,
+): Promise<boolean> {
+  const [existente] = await db
+    .select({
+      id: articles.id,
+      source: articles.source,
+      sourceTitle: articles.sourceTitle,
+    })
+    .from(articles)
+    // `slug` é UNIQUE, então isto devolve no máximo uma linha.
+    .where(eq(articles.slug, slug))
+    .limit(1);
+
+  if (!existente) return false;
+  if (existente.source !== item.fonte) return false;
+  if (existente.sourceTitle !== item.titulo) return false;
+
+  // Mesma regra do `refrescarSeMudou`: só proveniência. `status`, `title`,
+  // `dek` e `bodyMd` pertencem à adaptação, e mexer neles aqui despublicaria
+  // matéria no ar.
+  await db
+    .update(articles)
+    .set({
+      dedupeHash,
+      sourceContentHash: contentHash,
+      sourceUrl: item.urlCanonica,
+      sourceGuid: item.guid,
+      sourceExcerpt: item.excerpt,
+      sourceAuthor: item.autor,
+      sourceLength: item.tamanhoOriginal,
+      imageUrl: item.imagemUrl,
+      imageCredit: item.imagemCredito,
+      imageCaption: item.imagemLegenda,
+      updatedAt: agora,
+    })
+    .where(eq(articles.id, existente.id));
+
+  return true;
+}
+
 async function inserir(
   db: Db,
   item: ItemNormalizado,
@@ -183,6 +256,22 @@ async function gravarItem(
     inseriu = await inserir(db, item, slugBase, dedupeHash, contentHash, agora);
   } catch (erro) {
     if (!ehColisaoDeSlug(erro)) throw erro;
+
+    // Primeiro: é a MESMA matéria com URL nova? Se for, adotar o endereço novo
+    // no registro que já existe. Sem esta checagem, o ramo de desambiguação
+    // abaixo publicaria a mesma notícia duas vezes.
+    if (await adotarUrlNova(db, item, slugBase, dedupeHash, contentHash, agora)) {
+      console.warn(
+        JSON.stringify({
+          evento: "url_da_fonte_mudou",
+          fonte: item.fonte,
+          slug: slugBase,
+          urlNova: item.urlCanonica,
+        }),
+      );
+      return "atualizado";
+    }
+
     // Outra matéria já ocupa este slug. O sufixo vem do dedupeHash, então é
     // determinístico: a mesma matéria produz sempre o mesmo slug alternativo.
     const alternativo = slugDesambiguado(item.titulo, sufixoCurto(dedupeHash));
