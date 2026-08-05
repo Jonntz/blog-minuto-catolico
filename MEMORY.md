@@ -196,6 +196,61 @@ LANÇAR** quando `NODE_ENV === "production"` — já havia um `console.warn` ali
 o defeito chegou ao ar assim mesmo. Aviso em log de build não é lido por
 ninguém; build que produz canônica errada tem de quebrar.
 
+### 2.9f 🐛 O Drizzle 0.45 esconde a causa em `cause` — desambiguação de slug morta (05/08)
+
+`gravacao_falhou` a cada 15 min, na cadência exata do cron de ingestão. Matéria
+da SOTC nunca entrava, e a origem continua publicando, então repetia para sempre.
+
+Cadeia completa:
+
+1. A fonte trocou a URL do artigo (`…tailor-returning…` → o `source_guid` ainda
+   diz `…tailor-says-returning…`). URL canônica nova ⇒ **`dedupe_hash` novo**.
+2. `ON CONFLICT (dedupe_hash) DO NOTHING` não dispara — o hash é outro.
+3. Mas o **slug vem do título**, que não mudou ⇒ viola `articles_slug_idx`.
+4. `ehColisaoDeSlug` deveria capturar e reinserir com sufixo (é o que o
+   cabeçalho de `dedupe.ts` descreve). **Não capturava.**
+
+O motivo do passo 4 é a armadilha que vale guardar: **o Drizzle 0.45 embrulha o
+erro do driver num `DrizzleQueryError` cuja `.message` é `"Failed query: <SQL>
+params: <…>"`.** O texto do SQLite (`UNIQUE constraint failed: articles.slug`)
+existe **só em `.cause`**. O detector testava `.message` contra
+`/unique constraint failed/` — sempre falso. E o segundo teste, `/slug/`, dava
+**verdadeiro pelo motivo errado**: "slug" aparece na lista de colunas do SQL
+embrulhado.
+
+⚠️ Ao consertar, os dois termos têm de casar na **mesma** mensagem da cadeia, e
+o nome da coluna tem de ser qualificado (`articles.slug`). Concatenar a cadeia
+antes de testar reintroduz o bug ao contrário: violação de `dedupe_hash` seria
+lida como colisão de slug e **duplicaria matéria já publicada**.
+
+**Lição de observabilidade, que custou a investigação inteira:** o log gravava
+`erro.message`, ou seja, o embrulho — SQL inteiro, parâmetros inteiros, zero
+pista da falha real. Diagnosticar exigiu ler o código em vez do log. `gravarItens`
+agora emite `causa` (fim da cadeia) além de `erro`, ambos com `slice(0, 300)`.
+Ao capturar erro de banco neste projeto, **sempre percorra `cause`**.
+
+### 2.9g ⚠️ ABERTO: 5xx intermitente sob carga, ainda sem causa (05/08)
+
+Medido em produção: **7% a 17% das requisições** falham quando há rajada — 500,
+503 e streams que entregam a casca e nunca fecham. Atinge `/privacidade` e
+`/termos`, que são pré-renderizadas e **não tocam o D1**, na mesma proporção de
+`/feed.xml`. Assets nunca falham (`5xx 0` no painel).
+
+Já descartado: não é D1, não é user-agent (Googlebot, Bingbot e curl iguais),
+não é rota específica, não é CPU (226 ms de CPU contra 15 s de wall time).
+**Não são os erros de `level=error`** — em hora ociosa o filtro mostra só 4
+eventos, todos do cron da §2.9f.
+
+Hipótese não testada: contenção com o cron de adaptação, que gasta ~15 s de wall
+time esperando a NVIDIA. Teste que decide: rajada atravessando os minutos
+`:00/:15/:30/:45` e ver se as falhas se agrupam ali.
+
+Reproduz com `for i in $(seq 1 40); do curl -s -o /dev/null -w "%{http_code} "
+--max-time 10 https://minutocatolico.com.br/feed.xml; done`.
+
+**Por que importa:** o Googlebot reduz taxa de rastreamento ao encontrar 5xx, e
+rastrear um sitemap de 104 URLs é exatamente uma rajada.
+
 ### 2.5b 🔴 A CAPA FICOU SEM LITURGIA — causa raiz achada em 03/08/2026
 
 **Sintoma:** os cartões "Liturgia de hoje" e "Santo do dia" sumiram da capa.

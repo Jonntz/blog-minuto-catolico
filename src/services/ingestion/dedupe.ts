@@ -40,9 +40,50 @@ export interface ResumoGravacao {
   falhas: number;
 }
 
+/**
+ * Mensagem do erro e de toda a cadeia de `cause`.
+ *
+ * ## Por que a cadeia, e não só `.message`
+ *
+ * O Drizzle 0.45 embrulha o erro do driver num `DrizzleQueryError` cuja
+ * `message` é `"Failed query: <SQL> params: <…>"`. O texto do SQLite —
+ * `UNIQUE constraint failed: articles.slug` — fica em `cause`, e **só lá**.
+ *
+ * Olhar apenas `.message` foi o que matou a desambiguação de slug descrita no
+ * cabeçalho deste arquivo: o SQL embrulhado contém a palavra "slug" (está na
+ * lista de colunas) mas nunca contém "unique constraint failed", então o teste
+ * dava falso, o erro subia, e a matéria era descartada como `gravacao_falhou`
+ * a cada execução do cron — indefinidamente, porque a origem continua
+ * publicando o item.
+ */
+function mensagensDoErro(erro: unknown): string[] {
+  const mensagens: string[] = [];
+  let atual: unknown = erro;
+
+  // Limite explícito: cadeia de `cause` cíclica travaria o Worker.
+  for (let i = 0; i < 5 && atual != null; i++) {
+    mensagens.push(atual instanceof Error ? atual.message : String(atual));
+    atual = atual instanceof Error ? atual.cause : null;
+  }
+
+  return mensagens;
+}
+
+/**
+ * ⚠️ Os dois termos têm de aparecer na MESMA mensagem da cadeia.
+ *
+ * Concatenar tudo antes de testar reintroduziria o bug por outro caminho: o
+ * embrulho do Drizzle carrega "slug" na lista de colunas, então uma violação de
+ * `dedupe_hash` seria lida como colisão de slug e a matéria seria regravada com
+ * sufixo — duplicando no site algo que já está publicado. O nome da coluna é
+ * qualificado (`articles.slug`) pelo mesmo motivo: `source_url` também contém a
+ * substring "slug" em algumas fontes.
+ */
 function ehColisaoDeSlug(erro: unknown): boolean {
-  const mensagem = erro instanceof Error ? erro.message : String(erro);
-  return /unique constraint failed/i.test(mensagem) && /slug/i.test(mensagem);
+  return mensagensDoErro(erro).some((bruta) => {
+    const m = bruta.toLowerCase();
+    return m.includes("unique constraint failed") && m.includes("articles.slug");
+  });
 }
 
 /**
@@ -188,12 +229,25 @@ export async function gravarItens(
       }
     } catch (erro) {
       resumo.falhas++;
+      /**
+       * A `causa` é o campo que importa aqui, não o `erro`.
+       *
+       * Logando só `erro.message` o que chegava ao Observability era o embrulho
+       * do Drizzle: o SQL inteiro, os parâmetros inteiros (incluindo o texto da
+       * matéria) e nenhuma pista da falha real. Diagnosticar exigiu ler o código
+       * em vez do log — que é o oposto do que a §7 do CLAUDE.md pede.
+       *
+       * O `slice` existe porque o embrulho do Drizzle passa de 2 KB e o log é
+       * amostrado quando o volume cresce; a causa real vem antes do corte.
+       */
+      const mensagens = mensagensDoErro(erro);
       console.error(
         JSON.stringify({
           evento: "gravacao_falhou",
           fonte: item.fonte,
           url: item.urlCanonica,
-          erro: erro instanceof Error ? erro.message : String(erro),
+          causa: mensagens.at(-1)?.slice(0, 300),
+          erro: mensagens[0]?.slice(0, 300),
         }),
       );
     }
