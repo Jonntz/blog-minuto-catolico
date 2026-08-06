@@ -3,7 +3,7 @@ import { and, desc, eq, gte, isNotNull } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { getCategoria, getCategoriaOuPadrao } from "@/lib/categories";
 import { getSiteUrlSync } from "@/lib/env";
-import { PENDENTE } from "@/lib/institucional";
+import { PENDENTE, REDES_SOCIAIS } from "@/lib/institucional";
 
 /**
  * Camada de SEO do portal (CLAUDE.md §5).
@@ -521,6 +521,9 @@ export async function entidadePublisher(): Promise<JsonLd> {
     // Estas duas páginas existem e descrevem exatamente o que os campos pedem.
     ethicsPolicy: `${base}/politica-editorial`,
     publishingPrinciples: `${base}/politica-editorial`,
+    // Omitido enquanto não houver perfil — `sameAs: []` num JSON-LD é ruído, e
+    // a lista precisa conter só perfis que existem (ver `REDES_SOCIAIS`).
+    ...(REDES_SOCIAIS.length > 0 ? { sameAs: [...REDES_SOCIAIS] } : {}),
     ...(PENDENTE.email
       ? {
           email: PENDENTE.email,

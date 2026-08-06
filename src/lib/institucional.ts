@@ -42,6 +42,26 @@ export const PENDENTE = {
   localidade: "São Paulo/SP" as string | null,
 } as const;
 
+/**
+ * Perfis oficiais do portal em outras plataformas.
+ *
+ * Vira `sameAs` no JSON-LD da organização (`entidadePublisher`, em
+ * `src/lib/seo.ts`) — o campo que diz ao Google que este site e estes perfis
+ * são a MESMA entidade. Para um veículo recém-criado é um dos poucos sinais de
+ * entidade disponíveis antes de existirem backlinks editoriais.
+ *
+ * ⚠️ SÓ URL DE PERFIL QUE EXISTE E É NOSSO.
+ * `sameAs` é declaração de identidade, não lista de links. Apontar para perfil
+ * de terceiro, ou para um que ainda vai ser criado, é declarar identidade falsa
+ * — e o Google trata divergência de entidade como sinal negativo, não neutro.
+ * Lista vazia é o estado correto enquanto não houver perfil: o campo é omitido
+ * do JSON-LD em vez de sair vazio.
+ */
+export const REDES_SOCIAIS: readonly string[] = [
+  // "https://x.com/minutocatolico",
+  // "https://www.instagram.com/minutocatolico",
+];
+
 export const SOBRE = {
   /**
    * Quem responde editorialmente. O Google trata isso como sinal de E-E-A-T,
