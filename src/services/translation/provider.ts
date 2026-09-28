@@ -112,7 +112,7 @@ export interface RespostaAdaptacao {
  * A pergunta a fazer sempre é: quem julga é o mesmo que escreveu?
  *
  *   - Com `nvidia` (padrão): NÃO. A adaptação roda num Nemotron da NVIDIA e a
- *     verificação num Llama da Meta — famílias e dados de treino diferentes.
+ *     verificação num Gemma do Google — famílias e dados de treino diferentes.
  *     Um verificador de outra família não herda os vícios de quem escreveu, que
  *     é exatamente o que se quer de uma checagem adversarial. Se alguém apontar
  *     `NVIDIA_VERIFY_MODEL` para um Nemotron, essa garantia some em silêncio.

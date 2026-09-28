@@ -122,33 +122,14 @@ export const TRATAMENTOS = [
     papel:
       "Hospedagem, CDN e proteção contra abuso. Processa o endereço IP de cada requisição para entregar as páginas e bloquear ataques.",
     local: "Servidores fora do Brasil.",
-    condicionadoAConsentimento: false,
   },
   {
     nome: "NVIDIA NIM",
     papel:
       "Adaptação dos textos das matérias para português. Recebe apenas o conteúdo publicado pelas fontes — nunca endereço IP, e-mail ou qualquer dado de quem visita o site.",
     local: "Servidores fora do Brasil.",
-    condicionadoAConsentimento: false,
-  },
-  {
-    nome: "Adcash",
-    papel:
-      "Rede de publicidade. Quando você autoriza, ela carrega os anúncios e recebe seu endereço IP e dados do navegador para escolher o que exibir e medir os resultados.",
-    local: "Servidores fora do Brasil.",
-    condicionadoAConsentimento: true,
   },
 ] as const;
-
-/**
- * Publicidade está ligada no site?
- *
- * Enquanto for `false`, a política declara a publicidade como SUSPENSA e o
- * carregador de anúncio não é montado. Existe como interruptor único para que
- * texto legal e comportamento nunca possam divergir — foi exatamente essa
- * divergência que criou o problema de 03/08/2026.
- */
-export const PUBLICIDADE_ATIVA: boolean = true;
 
 /**
  * O que fica gravado no aparelho do leitor.
@@ -164,9 +145,5 @@ export const ARMAZENAMENTO_LOCAL = [
   {
     chave: "bn-salvos",
     para: "Guardar a lista de matérias que você marcou para ler depois.",
-  },
-  {
-    chave: "bn-consentimento",
-    para: "Lembrar se você autorizou ou recusou a exibição de publicidade, para não perguntar de novo a cada página.",
   },
 ] as const;

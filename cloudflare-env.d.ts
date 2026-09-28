@@ -11,7 +11,7 @@ interface __BaseEnv_CloudflareEnv {
 	SOURCE_SOTC_ENABLED: "true";
 	TRANSLATION_PROVIDER: "nvidia";
 	NVIDIA_MODEL: "nemotronSuper";
-	NVIDIA_VERIFY_MODEL: "llama70b";
+	NVIDIA_VERIFY_MODEL: "gemma31b";
 	WORKERS_AI_MODEL: "llama70b";
 	WORKERS_AI_VERIFY_MODEL: "mistral24b";
 	CRON_SECRET: string;

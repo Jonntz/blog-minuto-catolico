@@ -31,7 +31,7 @@
  *
  * Com a NVIDIA essa limitação DEIXA DE EXISTIR. O catálogo tem mais de 100
  * modelos no mesmo tier, então a adaptação roda num Nemotron da NVIDIA e a
- * verificação roda num Llama da Meta — famílias, pesos e dados de treino
+ * verificação roda num Gemma do Google — famílias, pesos e dados de treino
  * diferentes. Um verificador de outra família não herda os vícios de quem
  * escreveu, que é justamente o que se quer de uma checagem adversarial.
  *
@@ -78,24 +78,30 @@ export const ENDPOINT_NVIDIA =
   "https://integrate.api.nvidia.com/v1/chat/completions";
 
 /**
- * Modelos verificados como presentes em `GET /v1/models` (03/08/2026).
+ * Modelos verificados como presentes em `GET /v1/models` (28/09/2026).
  *
  * O catálogo é público e muda; por isso os identificadores ficam aqui, num
  * lugar só, e são trocáveis por variável de ambiente sem rebuild.
+ *
+ * ⚠️ E ELE MUDA SEM AVISO NO CANAL QUE A GENTE LÊ. O verificador anterior,
+ * `meta/llama-3.3-70b-instruct`, chegou ao fim de vida em 26/08/2026 09:00 UTC
+ * (HTTP 410). Toda checagem passou a falhar, nenhuma matéria foi publicada por
+ * mais de um mês e a fila represou ~500 itens. Na mesma revisão sumiram também
+ * `llama-3.3-nemotron-super-49b-v1.5`, `mistral-medium-3.5-128b` e o id antigo
+ * do Nano — os apelidos foram removidos para não servirem de armadilha.
+ * `classificarErroHttp` agora trata 404/410 como erro de configuração.
  */
 export const MODELOS_NVIDIA = {
   /** MoE 120B/12B ativos. O modelo próprio da NVIDIA, geração mais recente. */
   nemotronSuper: "nvidia/nemotron-3-super-120b-a12b",
   /** MoE 550B/55B ativos. O topo do catálogo — mais caro em crédito e tempo. */
   nemotronUltra: "nvidia/nemotron-3-ultra-550b-a55b",
-  /** MoE 30B/3B ativos. Barato e rápido, para tarefa de comparação. */
-  nemotronNano: "nvidia/nemotron-3-nano-30b-a3b",
-  /** Geração anterior, dense 49B. Reserva estável. */
-  nemotronSuper49b: "nvidia/llama-3.3-nemotron-super-49b-v1.5",
-  /** Meta, fora da família Nemotron — é o que torna a verificação independente. */
-  llama70b: "meta/llama-3.3-70b-instruct",
-  /** Mistral, terceira família disponível. */
-  mistralMedium: "mistralai/mistral-medium-3.5-128b",
+  /**
+   * Google, fora da família Nemotron — é o que torna a verificação independente.
+   * Medido em 28/09/2026 com o prompt e o parser reais: aprova texto fiel,
+   * reprova número trocado, ~10–17s por checagem.
+   */
+  gemma31b: "google/gemma-4-31b-it",
 } as const satisfies Record<string, string>;
 
 /** Modelo da ADAPTAÇÃO — é onde a qualidade editorial se decide. */
@@ -108,7 +114,7 @@ const MODELO_PADRAO: string = MODELOS_NVIDIA.nemotronSuper;
  * este voltar a ser um Nemotron, o veredito passa a ser o autor se avaliando, e
  * o aviso de `VerificacaoFactual` volta a valer integralmente.
  */
-const MODELO_VERIFICACAO_PADRAO: string = MODELOS_NVIDIA.llama70b;
+const MODELO_VERIFICACAO_PADRAO: string = MODELOS_NVIDIA.gemma31b;
 
 /** Aceita apelido de `MODELOS_NVIDIA` ou identificador completo `vendor/modelo`. */
 function resolverModelo(bruto: string | undefined, padrao: string): string {
@@ -167,7 +173,7 @@ const EXTRAS_NEMOTRON = {
 } as const;
 
 /**
- * Só famílias que documentam o campo. O verificador é um Llama da Meta, cujo
+ * Só famílias que documentam o campo. O verificador é um Gemma do Google, cujo
  * chat template não conhece `enable_thinking` — mandar para ele seria criar
  * risco de 400 em troca de nada.
  */
@@ -234,8 +240,9 @@ const OPCOES_VERIFICACAO: OpcoesChamada = {
    * artigo. Esperar 30s a mais é mais barato que refazer tudo.
    *
    * Se o timeout voltar a aparecer com frequência, o caminho não é subir de
-   * novo — é trocar `NVIDIA_VERIFY_MODEL` por um modelo menor de OUTRA família
-   * que não Nemotron (para preservar o juiz ≠ réu), como `google/gemma-4-31b-it`.
+   * novo — é trocar `NVIDIA_VERIFY_MODEL` por outro modelo de OUTRA família que
+   * não Nemotron (para preservar o juiz ≠ réu). Em 28/09/2026,
+   * `deepseek-v4.1-flash` e `kimi-k3` estouraram 120s num teste trivial.
    */
   timeoutMs: 150_000,
 };
@@ -276,8 +283,23 @@ export function classificarErroHttp(status: number, corpo: string): ErroProvider
   }
 
   /**
-   * 4xx restante (tipicamente 400) é requisição malformada — modelo que saiu do
-   * catálogo, campo recusado, prompt maior que a janela. NÃO é `resposta_invalida`:
+   * Modelo aposentado (410) ou fora do catálogo desta conta (404). É
+   * configuração, como a chave inválida: nenhuma nova tentativa resolve. Foi
+   * classificado como `indisponivel` até 28/09/2026, e por isso o fim de vida do
+   * verificador passou um mês parecendo soluço — cada execução ainda pagava
+   * adaptações antes de abortar. `desativado` aborta o lote na primeira e
+   * mantém os artigos em `draft`, prontos para quando o modelo for trocado.
+   */
+  if (status === 404 || status === 410) {
+    return {
+      tipo: "desativado",
+      mensagem: `${mensagem} — modelo aposentado ou fora do catálogo; troque NVIDIA_MODEL/NVIDIA_VERIFY_MODEL.`,
+    };
+  }
+
+  /**
+   * 4xx restante (tipicamente 400) é requisição malformada — campo recusado,
+   * prompt maior que a janela. NÃO é `resposta_invalida`:
    * a culpa não é do artigo, e marcá-lo como reprovado queimaria conteúdo bom
    * por erro nosso. Fica transitório; três seguidos abortam o lote pelo
    * `MAX_FALHAS_CONSECUTIVAS` em `adapt.ts` e o log diz o motivo.

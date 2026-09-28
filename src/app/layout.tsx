@@ -98,9 +98,8 @@ export default function RootLayout({
          * conexão em paralelo com o HTML economiza DNS + TCP + TLS do caminho
          * crítico. `res.cloudinary.com` é o do EWTN, que serve a maioria.
          *
-         * Só os hosts de IMAGEM entram aqui. Preconnect para a rede de anúncio
-         * seria contato com terceiro antes do opt-in — ele vive dentro do
-         * componente `Adcash`, no ramo já consentido.
+         * Só os hosts de IMAGEM entram aqui: preconnect para qualquer outro
+         * terceiro seria contato com ele antes de o leitor saber que existe.
          */}
         <link
           rel="preconnect"
@@ -135,8 +134,11 @@ export default function RootLayout({
          *    texto — a construção que o MEMORY.md §5c registra como a que
          *    derrubou o site inteiro em 31/07 (stream RSC corrompido).
          *
-         * O caminho correto está em `src/components/ads/` + `consent/`: banner
-         * com slot dimensionado, via `next/script`, só depois de opt-in.
+         * A Adcash saiu do site em 28/09/2026, incluindo o display com opt-in
+         * que a substituiu. Se a publicidade voltar, o ponto de partida é o
+         * commit `685d514` (`src/components/ads/` + `consent/`): banner com
+         * slot dimensionado, via `next/script`, só depois de opt-in — e a
+         * política de privacidade e `TRATAMENTOS` mudam no mesmo commit.
          */}
       </head>
       {/* O corte lateral vive no <html> (globals.css), não aqui: `overflow-x`

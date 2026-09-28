@@ -4,9 +4,28 @@
 > Se o contexto acabar no meio de algo, o "Próximo passo exato" no fim deste
 > arquivo é onde retomar.
 
-**Última atualização:** 2026-08-04 — SEO, segurança, performance e prontidão
-Adcash (§2.9–2.10). Publicidade SUSPENSA até haver zonas de banner e consentimento
-ligado.
+**Última atualização:** 2026-09-28 — pane de publicação de 26/08 a 28/09
+(verificador aposentado pela NVIDIA) corrigida, e Adcash removida do site. Ver
+"Incidente 26/08/2026" logo abaixo. As seções §2.9–2.10 sobre Adcash são
+histórico: publicidade não existe mais no código.
+
+### Incidente 26/08/2026 — nenhuma matéria publicada por 34 dias
+
+- **Sintoma:** última matéria em 25/08 22:37 UTC; `/api/health` em 503 com
+  498 artigos em `draft` e erros recorrentes em `ingestion_runs`.
+- **Causa:** `meta/llama-3.3-70b-instruct` (o `NVIDIA_VERIFY_MODEL`) chegou ao
+  fim de vida na NVIDIA em 26/08/2026 09:00 UTC — HTTP 410 em toda checagem.
+  A adaptação (Nemotron) seguia funcionando e pagando crédito; a verificação
+  falhava; o 410 era classificado como `indisponivel` (transitório), então os
+  artigos voltavam para `draft` e o lote abortava após 3 falhas. Nada perdido,
+  tudo represado.
+- **Correção:** verificador trocado para `google/gemma-4-31b-it` (apelido
+  `gemma31b`, família Google — preserva juiz ≠ réu). 404/410 passam a ser
+  `desativado` (aborta o lote na 1ª, mensagem pede troca de modelo). Apelidos
+  que sumiram do catálogo foram removidos de `MODELOS_NVIDIA`.
+- **Lição:** o health-check acusou o problema, mas ninguém estava olhando.
+  Falta um monitor externo (UptimeRobot/cron-job.org) batendo em `/api/health`
+  e alertando no 503.
 
 ---
 

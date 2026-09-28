@@ -100,12 +100,12 @@
 		"TRANSLATION_PROVIDER": "nvidia",
 		// Modelos da NVIDIA: apelido de MODELOS_NVIDIA ou id completo
 		// "vendor/modelo". Adaptação e verificação são de FAMÍLIAS DIFERENTES de
-		// propósito — um Llama auditando o que um Nemotron escreveu não herda os
+		// propósito — um Gemma auditando o que um Nemotron escreveu não herda os
 		// vícios do autor, que é o que se quer de uma checagem adversarial.
 		// Bônus: o limite gratuito (~40 req/min) é POR MODELO, então dois
 		// modelos distintos também dobram a vazão.
 		"NVIDIA_MODEL": "nemotronSuper",
-		"NVIDIA_VERIFY_MODEL": "llama70b",
+		"NVIDIA_VERIFY_MODEL": "gemma31b",
 		// Modelos do Workers AI — só entram em uso com TRANSLATION_PROVIDER=workersAi.
 		// Apelido de MODELOS_AVALIADOS ou id completo "@cf/...".
 		"WORKERS_AI_MODEL": "llama70b",

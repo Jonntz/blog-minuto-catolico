@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ReabrirConsentimento } from "@/components/consent/reabrir-consentimento";
 import {
   AvisoPendente,
   LegalShell,
@@ -9,7 +8,6 @@ import {
   ARMAZENAMENTO_LOCAL,
   PENDENTE,
   PRIVACIDADE,
-  PUBLICIDADE_ATIVA,
   TRATAMENTOS,
 } from "@/lib/institucional";
 import { metadataInstitucional } from "@/lib/seo";
@@ -34,21 +32,10 @@ export default function PrivacidadePage() {
         Os únicos dados pessoais que o site recebe de forma deliberada são o
         e-mail de quem se inscreve na newsletter.
       </p>
-      {PUBLICIDADE_ATIVA ? (
-        <p>
-          O site <strong>exibe publicidade de terceiro</strong>, e ela só é
-          carregada <strong>depois que você autoriza</strong>. Sem autorização,
-          nenhum script de anúncio é executado e nenhum dado seu chega à rede
-          publicitária. Você pode mudar essa escolha quando quiser — veja a
-          seção 3.
-        </p>
-      ) : (
-        <p>
-          A publicidade do site está <strong>suspensa</strong> no momento:
-          nenhum script de anúncio é carregado. Quando voltar, será mediante
-          autorização explícita, conforme descrito na seção 3.
-        </p>
-      )}
+      <p>
+        O site <strong>não exibe publicidade</strong>: nenhum script de rede de
+        anúncios é carregado e nenhum dado seu é repassado a anunciantes.
+      </p>
 
       <h2>1. Dados que o site trata</h2>
 
@@ -91,8 +78,7 @@ export default function PrivacidadePage() {
       </dl>
       <p>
         Como não são cookies e não saem do aparelho, são preferências suas, sob
-        seu controle. Limpar os dados do site no navegador apaga todas —
-        inclusive a sua escolha sobre publicidade, que voltará a ser perguntada.
+        seu controle. Limpar os dados do site no navegador apaga todas.
       </p>
 
       <h2>2. Com quem os dados são compartilhados</h2>
@@ -103,15 +89,7 @@ export default function PrivacidadePage() {
       <dl>
         {TRATAMENTOS.map((t) => (
           <div key={t.nome}>
-            <dt>
-              {t.nome}
-              {t.condicionadoAConsentimento ? (
-                // Marcar na própria lista evita que o leitor tenha de cruzar
-                // esta seção com a de publicidade para saber o que só roda
-                // mediante autorização.
-                <> — somente com a sua autorização</>
-              ) : null}
-            </dt>
+            <dt>{t.nome}</dt>
             <dd>
               {t.papel} <em>{t.local}</em>
             </dd>
@@ -126,39 +104,12 @@ export default function PrivacidadePage() {
       </p>
 
       <h2>3. Publicidade</h2>
-      {PUBLICIDADE_ATIVA ? (
-        <>
-          <p>
-            O site é mantido com publicidade da rede <strong>Adcash</strong>. A
-            base legal é o <strong>consentimento</strong> (LGPD, art. 7º, I):
-            enquanto você não autorizar, o script da rede{" "}
-            <strong>não é carregado</strong> — seu navegador sequer chega a
-            contatar o servidor dela.
-          </p>
-          <p>
-            Autorizada a exibição, a Adcash passa a receber seu endereço IP e
-            dados do navegador (tipo, idioma, tamanho de tela) e pode gravar
-            cookies próprios para escolher os anúncios e medir os resultados.
-            Isso caracteriza <strong>transferência internacional</strong> e{" "}
-            <strong>compartilhamento com terceiro</strong>, e é justamente por
-            isso que pedimos autorização antes.
-          </p>
-          <p>
-            <strong>Para mudar de ideia</strong>, use o botão abaixo. Retirar a
-            autorização interrompe o carregamento a partir da próxima página; o
-            que a rede já recebeu deve ser solicitado diretamente a ela.
-          </p>
-          <ReabrirConsentimento />
-        </>
-      ) : (
-        <p>
-          A exibição de publicidade está <strong>suspensa</strong>. Nenhum
-          script de rede publicitária é carregado neste site no momento. Quando
-          for reativada, esta seção será atualizada antes, e a exibição
-          dependerá de <strong>autorização explícita</strong> sua — sem
-          autorização, nenhum dado seu chega à rede.
-        </p>
-      )}
+      <p>
+        O site <strong>não exibe publicidade</strong>. Nenhum script de rede
+        publicitária é carregado. Se isso mudar, esta seção será atualizada
+        antes, e a exibição dependerá de autorização explícita sua — sem
+        autorização, nenhum dado seu chegará à rede.
+      </p>
 
       <h2>4. Medição de audiência</h2>
       <p>
