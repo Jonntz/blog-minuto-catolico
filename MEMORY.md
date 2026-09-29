@@ -23,6 +23,14 @@ histórico: publicidade não existe mais no código.
   `gemma31b`, família Google — preserva juiz ≠ réu). 404/410 passam a ser
   `desativado` (aborta o lote na 1ª, mensagem pede troca de modelo). Apelidos
   que sumiram do catálogo foram removidos de `MODELOS_NVIDIA`.
+- **Depois do deploy (28/09, 23:35–23:50 UTC):** a checagem voltou, mas o
+  cron seguiu sem publicar. Reproduzido localmente (ingestão EWTN real +
+  `adaptarPendentes` real contra D1 do miniflare): 2 de 3 itens reprovados pela
+  regra `numeros` por FALSO POSITIVO — "Matthew 19:14" → "Mateus 19,14" lido
+  como 1914, e "35,000" → "35 mil" lido como 35. Corrigido em
+  `numerosPermitidos` (guardrails.ts), com teste em `guardrails.test.ts`
+  (`npm test`). O 3º item foi adiado por `503 Service temporarily overloaded`
+  da NVIDIA no Nemotron Super — transitório, a fila retenta.
 - **Lição:** o health-check acusou o problema, mas ninguém estava olhando.
   Falta um monitor externo (UptimeRobot/cron-job.org) batendo em `/api/health`
   e alertando no 503.
@@ -267,6 +275,18 @@ agora emite `causa` (fim da cadeia) além de `erro`, ambos com `slice(0, 300)`.
 Ao capturar erro de banco neste projeto, **sempre percorra `cause`**.
 
 ### 2.9g ⚠️ ABERTO: 5xx intermitente sob carga, ainda sem causa (05/08)
+
+**Atualização 28/09/2026 — piorou e ficou mais localizado.** Na capa, ~60% das
+requisições SEQUENCIAIS (sem rajada) entregam a casca (48–79 KB) e nunca fecham.
+Em toda resposta travada falta o boundary `<Ultimas />` (`B:5`) — o que chama
+`listarPaginado({ porPagina: 12 })`. `/noticias` usa a mesma função com outros
+argumentos (outra chave de cache) e não travou em nenhuma das amostras; artigo,
+categoria e `/privacidade` também não. Medido de 23:41 a 23:51 UTC: a taxa não
+muda com a adaptação rodando ou parada — **a hipótese de contenção com o cron
+abaixo fica enfraquecida**. Suspeita atual: estado envenenado do `"use cache"`
+dessa chave em parte dos isolates (promessa pendente criada por outra
+requisição, que o workerd nunca resolve — mesmo sintoma do "Worker's code had
+hung" do `wrangler dev`). Não verificado: faltam os logs do Worker.
 
 Medido em produção: **7% a 17% das requisições** falham quando há rajada — 500,
 503 e streams que entregam a casca e nunca fecham. Atinge `/privacidade` e

@@ -390,6 +390,30 @@ function numerosPermitidos(original: string): Set<string> {
       }
     }
   }
+
+  /**
+   * Duas convenções do português que o `RE_NUMERO` lê como número NOVO. Ambas
+   * reprovavam tradução correta como "invenção" — medido em 28/09/2026, 2 de 2
+   * reprovações por `numeros` num lote real eram isto:
+   *
+   * - Versículo e hora: "Matthew 19:14" vira "Mateus 19,14", que normaliza para
+   *   "1914". Os dois-pontos não são separador, então o original só oferecia
+   *   "19" e "14".
+   * - Milhar por extenso: "35,000 people" vira "35 mil pessoas", e
+   *   "1,500,000" vira "1,5 milhão" — o adaptado escreve só os dígitos
+   *   significativos ("35", "15").
+   *
+   * Custo aceito, na mesma linha do "3.5 × 35" de `normalizarNumero`: um "35"
+   * inventado passa quando o original tem "35,000". Janela estreita; a
+   * alternativa era reprovar toda matéria com citação bíblica.
+   */
+  for (const m of original.matchAll(/\b(\d{1,3}):(\d{1,3})\b/g)) {
+    permitidos.add(normalizarNumero(m[1] + m[2]));
+  }
+  for (const n of [...permitidos]) {
+    if (n.length >= 4 && n.endsWith("0")) permitidos.add(n.replace(/0+$/, ""));
+  }
+
   return permitidos;
 }
 
