@@ -31,6 +31,19 @@ histórico: publicidade não existe mais no código.
   `numerosPermitidos` (guardrails.ts), com teste em `guardrails.test.ts`
   (`npm test`). O 3º item foi adiado por `503 Service temporarily overloaded`
   da NVIDIA no Nemotron Super — transitório, a fila retenta.
+- **Limpeza da fila (29/09, ~00:25 UTC, a pedido do usuário):** 391 rascunhos
+  com `published_at` > 7 dias (26/08–21/09) viraram `failed_validation` com o
+  erro `expirado: rascunho com mais de 7 dias na fila…` — para não publicar
+  notícia de um mês. Reversível: filtrar por `validation_errors like
+  '%expirado:%'`. Ficaram 111 rascunhos dos últimos 7 dias. Dos 17 reprovados
+  da janela, 16 eram `pre_voo` (texto da fonte curto demais — determinístico) e
+  não foram reenfileirados; 1 foi, e reprovou de novo (7 parágrafos + "29").
+- **Gargalo atual: capacidade da NVIDIA.** Rodadas do cron pós-deploy abortam
+  por `HTTP 524` (a borda Cloudflare da NVIDIA corta em 100 s), 3 seguidas, com
+  7–9 min de duração. Processando daqui contra o D1 de produção (mesmo
+  `adaptarPendentes`), o Nemotron Super devolveu `503 Service temporarily
+  overloaded` em 4 de 5 itens. Não é código nosso; opções: esperar, trocar
+  `NVIDIA_MODEL`, ou reduzir o timeout para abortar mais cedo.
 - **Lição:** o health-check acusou o problema, mas ninguém estava olhando.
   Falta um monitor externo (UptimeRobot/cron-job.org) batendo em `/api/health`
   e alertando no 503.
