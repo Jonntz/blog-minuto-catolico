@@ -115,12 +115,18 @@ export const FONTES_DECLARADAS = [
  * Analytics", que nunca foi instalado, e "Cloudflare Workers AI", trocado por
  * NVIDIA NIM em `c8a7c53` — e omitia a Adcash, que rodava em todas as páginas.
  * Ao mexer em provider, analytics ou anúncio, mexa AQUI no mesmo commit.
+ *
+ * ⚠️ E confira o HTML SERVIDO, não só o repositório. Em 23/10/2026 o Web
+ * Analytics, a detecção de bots por JavaScript (cookie `cf_clearance`) e o
+ * Speed Brain estavam ligados no PAINEL da Cloudflare, injetados na borda, sem
+ * uma linha de código — e a política dizia o contrário. Ligar/desligar recurso
+ * no painel da Cloudflare também exige revisar esta lista e /privacidade.
  */
 export const TRATAMENTOS = [
   {
     nome: "Cloudflare",
     papel:
-      "Hospedagem, CDN e proteção contra abuso. Processa o endereço IP de cada requisição para entregar as páginas e bloquear ataques.",
+      "Hospedagem, CDN, otimização das imagens, proteção contra robôs (cookie cf_clearance) e medição de audiência agregada (Web Analytics, sem cookies). Processa o endereço IP de cada requisição para entregar as páginas e bloquear ataques.",
     local: "Servidores fora do Brasil.",
   },
   {

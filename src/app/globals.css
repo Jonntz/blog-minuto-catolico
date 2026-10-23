@@ -20,7 +20,10 @@
   --line: oklch(0.905 0.004 95);
   --ink: oklch(0.2 0.006 265);
   --ink-2: oklch(0.44 0.006 265);
-  --ink-3: oklch(0.6 0.006 265);
+  /* Era 0.6: 3,60–3,95:1 sobre os fundos claros, abaixo do WCAG AA (4,5:1) —
+     o PageSpeed reprovou datas, fonte, rótulos da liturgia (23/10/2026). Em
+     0.54 o pior caso (sobre --surface-2) dá 4,61:1. O tema escuro já passava. */
+  --ink-3: oklch(0.54 0.006 265);
   --nav: oklch(0.985 0.003 95 / 0.72);
   /* Placeholder de imagem (a hachura diagonal do design). */
   --ph: oklch(0.955 0.005 95);

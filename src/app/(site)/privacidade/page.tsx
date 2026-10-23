@@ -80,6 +80,14 @@ export default function PrivacidadePage() {
         Como não são cookies e não saem do aparelho, são preferências suas, sob
         seu controle. Limpar os dados do site no navegador apaga todas.
       </p>
+      <p>
+        O único cookie do site é o <code>cf_clearance</code>, gravado pela
+        Cloudflare ao verificar que o acesso vem de uma pessoa e não de um robô
+        automatizado. Ele guarda apenas o resultado dessa verificação, não
+        identifica você e não serve para publicidade. É necessário para a
+        segurança do site, com base no <strong>legítimo interesse</strong>{" "}
+        (LGPD, art. 7º, IX).
+      </p>
 
       <h2>2. Com quem os dados são compartilhados</h2>
       <p>
@@ -115,17 +123,34 @@ export default function PrivacidadePage() {
       <p>
         Não usamos Google Analytics, pixel de rede social nem qualquer
         ferramenta de medição que crie identificador persistente de visitante.
-        As estatísticas de acesso vêm dos registros do próprio servidor,{" "}
-        <strong>de forma agregada</strong>.
+      </p>
+      <p>
+        A audiência é medida pelo <strong>Cloudflare Web Analytics</strong>: um
+        pequeno script registra quais páginas são visitadas e quanto tempo levam
+        para carregar. Segundo a Cloudflare, ele não usa cookies e não coleta
+        dados pessoais de quem visita. Os números chegam até nós apenas{" "}
+        <strong>de forma agregada</strong> — quantas visitas uma página teve,
+        não quem a visitou.
+      </p>
+      <p>
+        Se uma página falhar ao carregar, seu navegador pode avisar a Cloudflare
+        sobre o erro de rede (recurso chamado <em>Network Error Logging</em>).
+        O aviso serve só para detectarmos falhas de entrega e só é enviado
+        quando algo dá errado.
       </p>
 
       <h2>5. Conteúdo carregado de outros domínios</h2>
       <p>
-        As imagens das matérias são servidas a partir da infraestrutura das
-        fontes de origem. Ao carregar uma imagem, seu navegador faz uma
-        requisição a esses domínios, que por sua vez recebem seu endereço IP.
-        Não temos controle sobre o que essas empresas fazem com esse dado, e é
-        por isso que isto está escrito aqui.
+        As imagens das matérias vêm das fontes de origem, mas{" "}
+        <strong>quem as busca é o nosso servidor</strong>, não o seu navegador:
+        elas são redimensionadas pela Cloudflare e entregues a partir do próprio
+        endereço do Minuto Católico. As fontes de origem não recebem o seu
+        endereço IP quando você vê uma imagem aqui.
+      </p>
+      <p>
+        Para acelerar a navegação, a Cloudflare pode carregar antecipadamente
+        páginas do próprio site que você provavelmente vai abrir em seguida.
+        Isso acontece dentro do Minuto Católico e não envolve outros domínios.
       </p>
 
       <h2>6. Menores de idade</h2>

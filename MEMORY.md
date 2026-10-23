@@ -304,7 +304,24 @@ pista da falha real. Diagnosticar exigiu ler o código em vez do log. `gravarIte
 agora emite `causa` (fim da cadeia) além de `erro`, ambos com `slice(0, 300)`.
 Ao capturar erro de banco neste projeto, **sempre percorra `cause`**.
 
-### 2.9g ⚠️ ABERTO: 5xx intermitente sob carga, ainda sem causa (05/08)
+### 2.9g ⚠️ 5xx intermitente sob carga — CAUSA ACHADA em 23/10/2026
+
+**Causa: limite de CPU do plano Workers Free (10 ms por requisição).** Rajada
+de 100 requisições (12 em paralelo, capa + feed + privacidade + noticias):
+7% de falha, e o corpo dos 503 é `error code: 1102` — "Worker exceeded
+resource limits". Renderizar Next 16 custa ~226 ms de CPU (medido abaixo, em
+05/08 — e descartado na época por comparar com o wall time, não com o limite).
+A Cloudflare tolera estouro ocasional ("some built-in flexibility"); sob
+concorrência a tolerância acaba e o isolate é encerrado — 1102 se ainda não
+havia resposta, ou stream cortado depois da casca (o "trava após o shell", que
+caía no `<Ultimas />` por ser o boundary mais pesado). Requisições em série
+passaram 40/40 no mesmo dia: o problema é volume, não rota.
+
+Saídas: Workers Paid (US$ 5/mês, CPU padrão 30 s) é a única que GARANTE.
+No Free dá para reduzir a frequência (cache de HTML na borda via Cache API num
+worker que embrulha o do OpenNext), não zerar: todo cache miss ainda renderiza.
+
+#### Histórico (05/08 – 28/09), mantido para contexto
 
 **Atualização 28/09/2026 — piorou e ficou mais localizado.** Na capa, ~60% das
 requisições SEQUENCIAIS (sem rajada) entregam a casca (48–79 KB) e nunca fecham.
