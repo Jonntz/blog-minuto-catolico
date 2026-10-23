@@ -35,19 +35,6 @@ export const esquemaEnv = z.object({
     .min(32, "CRON_SECRET precisa ter ao menos 32 caracteres"),
 
   /**
-   * Liga/desliga a fonte Sign of the Cross Media.
-   *
-   * Existe porque o robots.txt deles bloqueia crawlers de IA nominalmente
-   * (ClaudeBot, GPTBot, anthropic-ai, ...). Nosso bot não é nenhum deles e a
-   * regra `User-agent: *` nos permite, mas a intenção declarada é contrária.
-   * Ver MEMORY.md §2.3 — risco aceito conscientemente, desligável aqui.
-   */
-  SOURCE_SOTC_ENABLED: z
-    .enum(["true", "false"])
-    .default("true")
-    .transform((v) => v === "true"),
-
-  /**
    * Provider de adaptação.
    *
    * `nvidia` é o padrão: catálogo gratuito da NVIDIA, limitado por requisições

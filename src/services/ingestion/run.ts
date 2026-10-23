@@ -12,10 +12,10 @@ import { eq } from "drizzle-orm";
 import { getDb, type Db } from "@/db";
 import { ingestionRuns } from "@/db/schema";
 import type { Fonte } from "@/db/schema";
-import { getUserAgent, getValidatedEnv } from "@/lib/env";
+import { getUserAgent } from "@/lib/env";
 import { gravarItens } from "./dedupe";
 import { coletarEwtn } from "./sources/ewtn";
-import { coletarSotc, enriquecerSotc } from "./sources/sotc";
+import { coletarMontagna } from "./sources/montagna";
 import type { ColetaDaFonte, ContextoIngestao } from "./types";
 
 export interface ResultadoDaFonte {
@@ -40,13 +40,19 @@ export interface ResultadoIngestao {
 interface DefinicaoDeFonte {
   fonte: Fonte;
   coletar: (ctx: ContextoIngestao) => Promise<ColetaDaFonte>;
-  /** Segunda fase opcional (só o SOTC precisa: imagem via og:image). */
+  /**
+   * Segunda fase opcional, para fonte cujo feed não traz corpo nem imagem
+   * (buscar a página da matéria: `article-body.ts` + `meta.ts`). Nenhuma fonte
+   * atual precisa — era o caso do SOTC.
+   */
   enriquecer?: (db: Db, ctx: ContextoIngestao) => Promise<unknown>;
 }
 
 const DEFINICOES: readonly DefinicaoDeFonte[] = [
   { fonte: "ewtn", coletar: coletarEwtn },
-  { fonte: "sotc", coletar: coletarSotc, enriquecer: enriquecerSotc },
+  // Substituiu o Sign of the Cross em 23/10/2026 — ver o cabeçalho de
+  // sources/montagna.ts. O SOTC não tem mais coletor.
+  { fonte: "montagna", coletar: coletarMontagna },
 ];
 
 function mensagemDeErro(erro: unknown): string {
@@ -150,7 +156,7 @@ async function executarFonte(
 }
 
 /**
- * Executa a ingestão de todas as fontes habilitadas.
+ * Executa a ingestão de todas as fontes.
  *
  * Sequencial: as fontes estão em hosts diferentes, mas serializar mantém o pico
  * de uso do Worker baixo e torna o log legível na ordem em que aconteceu — que é
@@ -159,17 +165,13 @@ async function executarFonte(
 export async function executarIngestao(): Promise<ResultadoIngestao> {
   const inicio = Date.now();
   const db = await getDb();
-  const env = await getValidatedEnv();
+  // `getUserAgent` valida o env inteiro antes — env inválido para tudo aqui.
   const userAgent = await getUserAgent();
 
   const ctx: ContextoIngestao = { userAgent, agora: Math.floor(inicio / 1000) };
 
-  const habilitadas = DEFINICOES.filter(
-    (d) => d.fonte !== "sotc" || env.SOURCE_SOTC_ENABLED,
-  );
-
   const fontes: ResultadoDaFonte[] = [];
-  for (const definicao of habilitadas) {
+  for (const definicao of DEFINICOES) {
     fontes.push(await executarFonte(db, definicao, ctx));
   }
 

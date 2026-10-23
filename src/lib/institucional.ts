@@ -90,9 +90,10 @@ export const FONTES_DECLARADAS = [
     descricao: "Agência católica de notícias, em inglês.",
   },
   {
-    nome: "Sign of the Cross Media",
-    url: "https://www.signofthecrossmedia.com/",
-    descricao: "Portal católico de notícias e formação, em inglês.",
+    nome: "Diane Montagna",
+    url: "https://dianemontagna.substack.com/",
+    descricao:
+      "Jornalista credenciada junto à Santa Sé; reportagem sobre o Vaticano, a liturgia tradicional e a vida da Igreja, em inglês.",
   },
   {
     nome: "Salve Maria",

@@ -39,6 +39,7 @@ const DIA = 86_400;
 const NOME_DA_FONTE: Record<Fonte, string> = {
   ewtn: "EWTN News",
   sotc: "Sign of the Cross",
+  montagna: "Diane Montagna",
 };
 
 interface EntradaMock {

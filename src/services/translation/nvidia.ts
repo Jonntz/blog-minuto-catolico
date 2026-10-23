@@ -31,7 +31,7 @@
  *
  * Com a NVIDIA essa limitação DEIXA DE EXISTIR. O catálogo tem mais de 100
  * modelos no mesmo tier, então a adaptação roda num Nemotron da NVIDIA e a
- * verificação roda num Gemma do Google — famílias, pesos e dados de treino
+ * verificação roda num gpt-oss da OpenAI — famílias, pesos e dados de treino
  * diferentes. Um verificador de outra família não herda os vícios de quem
  * escreveu, que é justamente o que se quer de uma checagem adversarial.
  *
@@ -78,34 +78,44 @@ export const ENDPOINT_NVIDIA =
   "https://integrate.api.nvidia.com/v1/chat/completions";
 
 /**
- * Modelos verificados como presentes em `GET /v1/models` (28/09/2026).
+ * Modelos verificados como ACESSÍVEIS pela conta em 23/10/2026 — chamada real,
+ * não só presença em `GET /v1/models`.
  *
  * O catálogo é público e muda; por isso os identificadores ficam aqui, num
  * lugar só, e são trocáveis por variável de ambiente sem rebuild.
  *
- * ⚠️ E ELE MUDA SEM AVISO NO CANAL QUE A GENTE LÊ. O verificador anterior,
- * `meta/llama-3.3-70b-instruct`, chegou ao fim de vida em 26/08/2026 09:00 UTC
- * (HTTP 410). Toda checagem passou a falhar, nenhuma matéria foi publicada por
- * mais de um mês e a fila represou ~500 itens. Na mesma revisão sumiram também
- * `llama-3.3-nemotron-super-49b-v1.5`, `mistral-medium-3.5-128b` e o id antigo
- * do Nano — os apelidos foram removidos para não servirem de armadilha.
- * `classificarErroHttp` agora trata 404/410 como erro de configuração.
+ * ⚠️ E ELE MUDA SEM AVISO NO CANAL QUE A GENTE LÊ. Duas pausas de publicação:
+ *  - 26/08/2026: `meta/llama-3.3-70b-instruct` (verificador) chegou ao fim de
+ *    vida (HTTP 410). Mais de um mês sem publicar.
+ *  - 20/10/2026: `nvidia/nemotron-3-super-120b-a12b` (adaptação) passou a dar
+ *    `404 "Function not found for account"` — CONTINUAVA listado em
+ *    `/v1/models`. Na mesma data, Mistral Large, Kimi K2.6 e Gemma 3 davam o
+ *    mesmo 404, e o Gemma 4 (verificador) não respondia em 90 s.
+ * Lição: listado não significa disponível para a conta. Teste com chamada.
+ * `classificarErroHttp` trata 404/410 como `desativado` — o lote aborta na
+ * hora e o motivo fica em `ingestion_runs.error`.
  */
 export const MODELOS_NVIDIA = {
-  /** MoE 120B/12B ativos. O modelo próprio da NVIDIA, geração mais recente. */
-  nemotronSuper: "nvidia/nemotron-3-super-120b-a12b",
-  /** MoE 550B/55B ativos. O topo do catálogo — mais caro em crédito e tempo. */
+  /**
+   * Nemotron 3.5, MoE 120B/12B ativos. Variante VL (visão + texto) — é a que
+   * a conta acessa; para texto puro se comporta como o Super. ~0,9 s numa
+   * frase curta, e no fluxo real (23/10/2026) publicou 2 de 4 matérias com o
+   * checador abaixo.
+   */
+  nemotron35Super: "nvidia/nemotron-3.5-super-vl-120b-a12b",
+  /** MoE 550B/55B ativos. Reserva: mais lento (~4 s numa frase curta). */
   nemotronUltra: "nvidia/nemotron-3-ultra-550b-a55b",
   /**
-   * Google, fora da família Nemotron — é o que torna a verificação independente.
-   * Medido em 28/09/2026 com o prompt e o parser reais: aprova texto fiel,
-   * reprova número trocado, ~10–17s por checagem.
+   * OpenAI open-weights, fora da família Nemotron — é o que mantém a
+   * verificação independente. Modelo de RACIOCÍNIO: o pensamento vem em
+   * `reasoning_content` (separado) mas conta no `max_tokens` — ver
+   * `OPCOES_VERIFICACAO`. Único não-Nemotron que respondia em 23/10/2026.
    */
-  gemma31b: "google/gemma-4-31b-it",
+  gptOss20b: "openai/gpt-oss-20b",
 } as const satisfies Record<string, string>;
 
 /** Modelo da ADAPTAÇÃO — é onde a qualidade editorial se decide. */
-const MODELO_PADRAO: string = MODELOS_NVIDIA.nemotronSuper;
+const MODELO_PADRAO: string = MODELOS_NVIDIA.nemotron35Super;
 
 /**
  * Modelo da VERIFICAÇÃO — de OUTRA FAMÍLIA de propósito.
@@ -114,7 +124,7 @@ const MODELO_PADRAO: string = MODELOS_NVIDIA.nemotronSuper;
  * este voltar a ser um Nemotron, o veredito passa a ser o autor se avaliando, e
  * o aviso de `VerificacaoFactual` volta a valer integralmente.
  */
-const MODELO_VERIFICACAO_PADRAO: string = MODELOS_NVIDIA.gemma31b;
+const MODELO_VERIFICACAO_PADRAO: string = MODELOS_NVIDIA.gptOss20b;
 
 /** Aceita apelido de `MODELOS_NVIDIA` ou identificador completo `vendor/modelo`. */
 function resolverModelo(bruto: string | undefined, padrao: string): string {
@@ -135,7 +145,7 @@ function resolverModelo(bruto: string | undefined, padrao: string): string {
  */
 export interface EnvNvidia {
   NVIDIA_API_KEY?: string;
-  /** Apelido (`nemotronSuper`) ou id completo. Vazio usa o padrão. */
+  /** Apelido (`nemotron35Super`) ou id completo. Vazio usa o padrão. */
   NVIDIA_MODEL?: string;
   /** Idem, para a checagem factual. */
   NVIDIA_VERIFY_MODEL?: string;
@@ -173,9 +183,9 @@ const EXTRAS_NEMOTRON = {
 } as const;
 
 /**
- * Só famílias que documentam o campo. O verificador é um Gemma do Google, cujo
- * chat template não conhece `enable_thinking` — mandar para ele seria criar
- * risco de 400 em troca de nada.
+ * Só famílias que documentam o campo. O verificador é um gpt-oss da OpenAI,
+ * cujo chat template não conhece `enable_thinking` — mandar para ele seria
+ * criar risco de 400 em troca de nada.
  */
 function precisaDesligarRaciocinio(modelo: string): boolean {
   return /nemotron/i.test(modelo);
@@ -230,7 +240,15 @@ const OPCOES_ADAPTACAO: OpcoesChamada = {
 };
 
 const OPCOES_VERIFICACAO: OpcoesChamada = {
-  maxTokens: 2000,
+  /**
+   * 8000, não 2000. O verificador (`gpt-oss-20b`) é modelo de raciocínio e o
+   * pensamento — que vem separado, em `reasoning_content` — sai do MESMO teto.
+   * Com 2000, no fluxo real de 23/10/2026, 1 de 4 checagens acabou em
+   * `finish_reason=length` sem nenhum veredito, e o artigo foi adiado. Não
+   * baixamos o `reasoning_effort` de propósito: numa checagem de fatos, pensar
+   * mais é o que se quer. O veredito em si cabe em ~200 tokens.
+   */
+  maxTokens: 8000,
   // Julgamento não é lugar para criatividade.
   temperatura: 0,
   /**

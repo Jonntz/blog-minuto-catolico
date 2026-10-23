@@ -31,12 +31,17 @@ export interface ItemRss {
   guid?: string;
   guidEhPermalink: boolean;
   descricao?: string;
-  /** `content:encoded` — HTML integral. Só o EWTN publica. */
+  /** `content:encoded` — HTML integral (EWTN e Substack publicam). */
   conteudoHtml?: string;
   pubDate?: string;
   autor?: string;
   categorias: string[];
   enclosureUrl?: string;
+  /**
+   * MIME do `<enclosure>`. Sem ele não dá para distinguir a foto de capa de um
+   * episódio em áudio — o Substack usa o mesmo campo para os dois.
+   */
+  enclosureTipo?: string;
   midia?: MidiaRss;
 }
 
@@ -147,6 +152,7 @@ function extrairItem(bruto: unknown): ItemRss {
       .map((c) => comoTexto(c))
       .filter((c): c is string => Boolean(c)),
     enclosureUrl: atributo(item.enclosure, "url"),
+    enclosureTipo: atributo(item.enclosure, "type"),
     midia: extrairMidia(item["media:content"]),
   };
 }

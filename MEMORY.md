@@ -9,6 +9,57 @@
 "Incidente 26/08/2026" logo abaixo. As seções §2.9–2.10 sobre Adcash são
 histórico: publicidade não existe mais no código.
 
+### ✅ Desfecho (23/10/2026, decisões do usuário)
+
+- **Modelos:** adaptação `nvidia/nemotron-3.5-super-vl-120b-a12b`
+  (`nemotron35Super`), verificação `openai/gpt-oss-20b` (`gptOss20b`). Fluxo real
+  com 5 matérias do EWTN: 4 publicadas, 1 reprovada com razão (paróquia virou
+  "catedral"). `OPCOES_VERIFICACAO.maxTokens` 2000 → 8000: o gpt-oss pensa antes
+  de responder e, com 2000, 1 de 4 checagens terminou sem veredito.
+- **SOTC fora do ar:** os 150 publicados viraram `failed_validation` com motivo
+  `removido: fonte Sign of the Cross descontinuada…` (reversível). Coletor
+  apagado; `SOURCE_SOTC_ENABLED` removida. `sotc` continua em `FONTES` por causa
+  das linhas históricas.
+- **Fonte nova: Diane Montagna** (`dianemontagna.substack.com/feed`, id
+  `montagna`). Escolhida pelo usuário contra Rorate Caeli (blog anônimo,
+  mistura ensaio/repost/devocional). Avaliados e descartados: OnePeterFive,
+  Crisis, TFP (opinião/ativismo, não notícia), Catholic Family News (feed parado
+  desde out/2025), Remnant (403), LifeSiteNews (termos). Volume baixo — 3–5
+  posts/semana —, mas reportagem própria sobre Vaticano e missa tradicional.
+  O HTML do Substack tem widget de assinatura no MEIO do texto e apelo de
+  doação no fim: `limparHtmlSubstack` remove por bloco (testado). Fluxo real:
+  1 publicada, 1 reprovada com razão ("Venetian-born" virou "venezuelano"),
+  2 adiadas por HTTP 500 da NVIDIA (transitório).
+- Léxico de categorias: "St. Peter's Basilica/Square" conta como Vaticano, e
+  TLM/Latin Mass/Traditionis Custodes como liturgia (`categories.test.ts`).
+
+### 🔴 Duas fontes paradas — investigado em 23/10/2026
+
+**Sign of the Cross (SOTC) — sem itens desde 02/10 18:31 UTC.** O site foi
+absorvido pela LifeSiteNews ("A LifeSite property"): todo o domínio, inclusive
+`/feed/` e `robots.txt`, faz 301 para `https://lifesitenews.com/sotcm/`. O
+coletor segue o redirect, recebe HTML e falha com "falta rss > channel"
+(1.087 execuções seguidas). Existe feed oficial da seção:
+`https://www.lifesitenews.com/topics/sotcm/feed/` (25 itens, só resumo de
+~600 chars, mistura `/news/` e `/episodes/` em vídeo; o parser lê sem ajuste).
+**Bloqueio não técnico:** os termos da LifeSiteNews proíbem reutilizar >25% de
+uma matéria sem permissão escrita; trecho gratuito só até 2 parágrafos e SEM
+alterar o texto; e o robots.txt deles barra GPTBot, ClaudeBot, PerplexityBot e
+Google-Extended. Retomar a fonte exige permissão (decisão do usuário).
+Efeito colateral: os ~150 publicados da SOTC têm `source_url` no domínio antigo,
+que cai na landing `/sotcm/` — atribuição quebrada. As matérias existem na
+LifeSiteNews no MESMO caminho (`www.lifesitenews.com/<mesmo path>/`; testado 6/6).
+
+**EWTN — nada publicado desde 20/10.** Toda rodada de adaptação aborta com
+`desativado: HTTP 404 Function not found for account`: o
+`nvidia/nemotron-3-super-120b-a12b` continua listado em `/v1/models` mas a conta
+perdeu acesso. O Gemma (verificador) não respondeu em 60–90 s. Funcionando no
+teste: `nemotron-3.5-super-vl-120b-a12b` (0,9 s), `nemotron-3-ultra` (3,9 s);
+fora da família Nemotron só `openai/gpt-oss-20b` (28 s, veredito correto).
+Mistral, Kimi e Gemma 3 dão o mesmo 404. O tier gratuito da NVIDIA está
+encolhendo — avaliar voltar ao Workers AI (`TRANSLATION_PROVIDER=workersAi`),
+que comporta ~34 artigos/dia, acima do volume atual só com EWTN.
+
 ### Performance mobile — PageSpeed 74 (23/10/2026)
 
 Lighthouse local (mobile, 3 rodadas): 80–89, TBT 0–30 ms, CLS 0. **O problema

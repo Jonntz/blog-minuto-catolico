@@ -38,7 +38,9 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       { protocol: "https", hostname: "res.cloudinary.com" },
       { protocol: "https", hostname: "www.ewtnnews.com" },
-      { protocol: "https", hostname: "www.signofthecrossmedia.com" },
+      // Fotos dos posts de Diane Montagna (Substack). O coletor guarda a
+      // original do S3, não a URL do proxy `substackcdn.com`.
+      { protocol: "https", hostname: "substack-post-media.s3.amazonaws.com" },
       { protocol: "https", hostname: "salvemaria.com.br" },
     ],
     /**

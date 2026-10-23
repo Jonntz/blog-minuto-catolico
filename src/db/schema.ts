@@ -41,7 +41,12 @@ export const STATUS_ARTIGO = [
 export type StatusArtigo = (typeof STATUS_ARTIGO)[number];
 
 /** Fontes suportadas. Adicionar fonte = adicionar aqui + em src/lib/categories.ts. */
-export const FONTES = ["ewtn", "sotc"] as const;
+/**
+ * `sotc` fica no tipo mesmo sem coletor: há linhas históricas com esse valor
+ * (todas fora do ar desde 23/10/2026). Tirar daqui faria o TypeScript mentir
+ * sobre o que o banco devolve.
+ */
+export const FONTES = ["ewtn", "sotc", "montagna"] as const;
 export type Fonte = (typeof FONTES)[number];
 
 // ---------------------------------------------------------------------------

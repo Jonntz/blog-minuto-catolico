@@ -183,6 +183,8 @@ const LEXICO_TITULO: Readonly<Record<string, readonly string[]>> = {
     "mass", "liturg", "eucharist", "communion", "missal", "vespers",
     "sacrament", "baptism", "confession", "adoration", "holy hour",
     "advent", "lent", "easter vigil",
+    // Missa tradicional — tema central de Diane Montagna (fonte desde 23/10/2026).
+    "tlm", "latin mass", "traditionis custodes", "summorum pontificum",
   ],
   caridade: [
     // "abuse" saiu daqui de propósito: cobertura de escândalo de abuso não é
@@ -287,7 +289,12 @@ export function mapearCategoria(pistas: PistasDeCategoria): string {
 
   // 3. Léxico de título — vence quem tiver mais acertos.
   if (pistas.titulo) {
-    const titulo = normalizar(pistas.titulo);
+    // "St. Peter's Basilica/Square" é LUGAR — o Vaticano —, não santo. Sem
+    // isto o "st. " do léxico de santos empatava e vencia pela ordem.
+    const titulo = normalizar(pistas.titulo).replace(
+      /\bst\.? peter['’]?s (?:basilica|square)\b/g,
+      "vatican",
+    );
     let melhorSlug = "";
     let melhorPontos = 0;
     for (const [slug, termos] of Object.entries(LEXICO_TITULO)) {

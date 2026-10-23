@@ -109,18 +109,17 @@
 	},
 	"vars": {
 		"SITE_URL": "https://minutocatolico.com.br",
-		"SOURCE_SOTC_ENABLED": "true",
 		// Provider de adaptação: "nvidia" (padrão), "workersAi" (reserva) ou
 		// "anthropic" (stub que falha alto).
 		"TRANSLATION_PROVIDER": "nvidia",
 		// Modelos da NVIDIA: apelido de MODELOS_NVIDIA ou id completo
 		// "vendor/modelo". Adaptação e verificação são de FAMÍLIAS DIFERENTES de
-		// propósito — um Gemma auditando o que um Nemotron escreveu não herda os
+		// propósito — um gpt-oss auditando o que um Nemotron escreveu não herda os
 		// vícios do autor, que é o que se quer de uma checagem adversarial.
 		// Bônus: o limite gratuito (~40 req/min) é POR MODELO, então dois
 		// modelos distintos também dobram a vazão.
-		"NVIDIA_MODEL": "nemotronSuper",
-		"NVIDIA_VERIFY_MODEL": "gemma31b",
+		"NVIDIA_MODEL": "nemotron35Super",
+		"NVIDIA_VERIFY_MODEL": "gptOss20b",
 		// Modelos do Workers AI — só entram em uso com TRANSLATION_PROVIDER=workersAi.
 		// Apelido de MODELOS_AVALIADOS ou id completo "@cf/...".
 		"WORKERS_AI_MODEL": "llama70b",

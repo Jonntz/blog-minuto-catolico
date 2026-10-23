@@ -16,7 +16,7 @@ import {
 /**
  * /feed.xml — feed RSS 2.0 DO PORTAL (CLAUDE.md §5).
  *
- * Não confundir com os feeds que a ingestão CONSOME (EWTN, Sign of the Cross):
+ * Não confundir com os feeds que a ingestão CONSOME (EWTN, Diane Montagna):
  * este é o nosso, para os nossos leitores e para agregadores que queiram nos
  * seguir. Fluxo oposto.
  *

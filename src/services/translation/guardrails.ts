@@ -202,7 +202,9 @@ export function apenasExcessoDeTamanho(
  */
 export const HOSTS_POR_FONTE: Readonly<Record<Fonte, readonly string[]>> = {
   ewtn: ["ewtnnews.com", "www.ewtnnews.com"],
+  // Sem coletor desde 23/10/2026; fica porque `Fonte` ainda inclui `sotc`.
   sotc: ["signofthecrossmedia.com", "www.signofthecrossmedia.com"],
+  montagna: ["dianemontagna.substack.com"],
 };
 
 // ---------------------------------------------------------------------------
