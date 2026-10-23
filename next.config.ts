@@ -41,7 +41,14 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "www.signofthecrossmedia.com" },
       { protocol: "https", hostname: "salvemaria.com.br" },
     ],
-    formats: ["image/avif", "image/webp"],
+    /**
+     * Só WebP. Cada combinação (imagem × largura × formato) é uma
+     * transformação única no Cloudflare Images, e o plano Free para em 5.000
+     * por mês com erro 9422 — imagem quebrada, não fallback. AVIF junto dobraria
+     * o consumo para ganhar ~20% de bytes sobre o WebP. Ver o binding `IMAGES`
+     * em wrangler.jsonc.
+     */
+    formats: ["image/webp"],
 
     /**
      * Larguras DERIVADAS dos `sizes` que o projeto realmente usa, não o padrão
@@ -49,10 +56,9 @@ const nextConfig: NextConfig = {
      *
      * Os slots reais são: 1160px (imagem do artigo), 780px (destaque da capa),
      * 420px (faixa editorial), 380px (card em grade) — e `100vw` no celular.
-     * O default do Next são 8 `deviceSizes`; com dois formatos (`avif`+`webp`),
-     * cada imagem vira até 16 variantes a otimizar e guardar. Como as imagens
-     * vêm de CDN de terceiro e cada variante é um miss que custa CPU do Worker,
-     * cortar a lista é ganho direto.
+     * Cada largura distinta pedida é uma transformação única cobrada da cota
+     * do Cloudflare Images (ver `formats` acima), então lista curta aqui é
+     * cota preservada, não só cache mais quente.
      *
      * Ao mudar um `sizes` em `article-card`, `article-header` ou `editorial`,
      * conferir se a largura correspondente está aqui.
@@ -61,8 +67,9 @@ const nextConfig: NextConfig = {
     imageSizes: [96, 128, 256, 384],
 
     /**
-     * As fontes publicam a imagem uma vez e não a trocam. Um dia de cache no
-     * lado do Next evita reotimizar a mesma URL a cada isolate frio.
+     * As fontes publicam a imagem uma vez e não a trocam. ⚠️ O OpenNext IGNORA
+     * esta opção com o binding `IMAGES` (documentado no adapter): fica valendo
+     * só para `next dev`. Em produção quem cacheia é o Cloudflare Images.
      */
     minimumCacheTTL: 86_400,
 
@@ -166,6 +173,18 @@ const nextConfig: NextConfig = {
      * aparece quando há dados no banco.
      */
     cpus: 1,
+
+    /**
+     * CSS embutido no HTML em vez de `<link rel="stylesheet">`.
+     *
+     * O CSS inteiro do site são ~12 KiB (Tailwind já poda o que não é usado),
+     * e era o único recurso bloqueando a primeira pintura: no Lighthouse mobile
+     * de 23/10/2026, ~190 ms de economia estimada no FCP/LCP. Num 4G, um
+     * round-trip a menos antes de pintar vale mais que o cache do arquivo entre
+     * páginas — e o leitor de portal de notícias chega majoritariamente por
+     * link externo, numa página só.
+     */
+    inlineCss: true,
   },
 };
 

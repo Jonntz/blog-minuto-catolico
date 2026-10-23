@@ -9,6 +9,23 @@
 "Incidente 26/08/2026" logo abaixo. As seções §2.9–2.10 sobre Adcash são
 histórico: publicidade não existe mais no código.
 
+### Performance mobile — PageSpeed 74 (23/10/2026)
+
+Lighthouse local (mobile, 3 rodadas): 80–89, TBT 0–30 ms, CLS 0. **O problema
+é só o LCP (3,6–4,5 s)**, que é a imagem do destaque da capa. Causas medidas:
+1. Imagem LCP com prioridade `Low`, pedida 1,8 s depois do HTML. No Next 16
+   `priority` é só alias de `preload` e não põe `fetchpriority`. Corrigido em
+   `article-media.tsx` (`preload` + `fetchPriority="high"`).
+2. **`next/image` não otimizava nada**: sem binding `IMAGES` o OpenNext devolve
+   o original (3646×2268, 2,4 MB). Binding adicionado; `formats` só WebP para
+   caber nas 5.000 transformações/mês do plano Free (acima disso: erro 9422).
+3. Preconnect `res.cloudinary.com` + 2 dns-prefetch sem uso, removidos.
+4. CSS bloqueante (12 KiB) → `experimental.inlineCss`.
+Pendente: a Cloudflare injeta Web Analytics (`cloudflareinsights` +
+`/cdn-cgi/rum`), detecção de bots por JS e Speed Brain — configurados no
+painel, não no código. O Web Analytics contradiz a §4 da política de
+privacidade ("estatísticas vêm dos registros do próprio servidor").
+
 ### Incidente 26/08/2026 — nenhuma matéria publicada por 34 dias
 
 - **Sintoma:** última matéria em 25/08 22:37 UTC; `/api/health` em 503 com

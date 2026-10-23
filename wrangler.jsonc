@@ -89,6 +89,21 @@
 	"ai": {
 		"binding": "AI"
 	},
+	// Otimização de imagens do `next/image` (Cloudflare Images).
+	//
+	// SEM ESTE BINDING O OPENNEXT NÃO OTIMIZA NADA: `/_next/image` devolve o
+	// original. Medido em 23/10/2026 no Lighthouse mobile: uma foto de
+	// 3646×2268 (2,4 MB, JPEG) servida para um quadro de 732×412, e ~2,8 MB
+	// desperdiçados por visita à capa. O nome precisa ser exatamente `IMAGES`.
+	//
+	// Plano Free: 5.000 transformações ÚNICAS por mês, sem cobrança. Passando
+	// disso, transformação NOVA devolve erro 9422 (imagem quebrada) — as já
+	// feitas continuam servidas do cache. Por isso `formats` no next.config.ts
+	// tem só WebP: AVIF junto dobraria o consumo. Acompanhar em
+	// Painel → Images → Transformations.
+	"images": {
+		"binding": "IMAGES"
+	},
 	"observability": {
 		"enabled": true
 	},

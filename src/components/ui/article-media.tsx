@@ -57,7 +57,15 @@ export function ArticleMedia({
           width={width}
           height={height}
           sizes={sizes}
-          priority={priority}
+          /*
+           * `preload` + `fetchPriority`, e não `priority`. No Next 16 o
+           * `priority` virou só um alias de `preload`: injeta o preload mas NÃO
+           * marca a requisição como alta — medido em 23/10/2026, a imagem LCP da
+           * capa saía com prioridade `Low` e só começava a baixar 1,8 s depois
+           * do HTML, atrás de fontes, CSS e scripts (Lighthouse mobile).
+           */
+          preload={priority}
+          fetchPriority={priority ? "high" : undefined}
           className="h-full w-full object-cover"
         />
       ) : (

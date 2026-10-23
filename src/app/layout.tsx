@@ -93,22 +93,16 @@ export default function RootLayout({
     >
       <head>
         {/**
-         * A imagem de destaque da capa e do artigo é o LCP, e ela vem sempre de
-         * um destes hosts (ver `remotePatterns` em next.config.ts). Abrir a
-         * conexão em paralelo com o HTML economiza DNS + TCP + TLS do caminho
-         * crítico. `res.cloudinary.com` é o do EWTN, que serve a maioria.
+         * Sem preconnect para os hosts de imagem das fontes — de propósito.
          *
-         * Só os hosts de IMAGEM entram aqui: preconnect para qualquer outro
-         * terceiro seria contato com ele antes de o leitor saber que existe.
+         * Havia um para `res.cloudinary.com` e dois dns-prefetch (EWTN, SOTC).
+         * Nenhum era usado: toda imagem passa por `next/image`, ou seja, o
+         * navegador pede `/_next/image` ao PRÓPRIO domínio e quem busca o
+         * original é o Worker. Medido em 23/10/2026: zero requisições do
+         * navegador para esses hosts, e o Lighthouse acusando "Unused
+         * preconnect" — uma conexão TLS aberta à toa no caminho crítico do
+         * celular. Só volte a pôr se alguma imagem passar a sair sem otimizar.
          */}
-        <link
-          rel="preconnect"
-          href="https://res.cloudinary.com"
-          crossOrigin="anonymous"
-        />
-        <link rel="dns-prefetch" href="https://www.ewtnnews.com" />
-        <link rel="dns-prefetch" href="https://www.signofthecrossmedia.com" />
-
         <script
           // Conteúdo estático definido em build. Não há entrada de usuário aqui.
           dangerouslySetInnerHTML={{ __html: SCRIPT_TEMA }}
