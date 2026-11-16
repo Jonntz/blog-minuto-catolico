@@ -7,7 +7,7 @@
  * indicação mantendo conformidade integral com a LGPD e o Google News.
  */
 
-export const TAG_AFILIADO_AMAZON = "";
+export const TAG_AFILIADO_AMAZON = "minutocatolic-20";
 
 export interface ObraRecomendada {
   titulo: string;
