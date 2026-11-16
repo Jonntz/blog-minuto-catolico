@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { ArticleCard } from "@/components/article/article-card";
+import { BookRecommendation } from "@/components/article/book-recommendation";
 import { SectionHeading } from "@/components/home/section-heading";
 import { JsonLd } from "@/components/seo/json-ld";
 import { Container } from "@/components/ui/container";
@@ -129,6 +130,8 @@ async function Editoria({ params }: Props) {
           </div>
         ) : null}
       </div>
+
+      <BookRecommendation categoriaSlug={slug} />
     </>
   );
 }

@@ -32,7 +32,9 @@ export function BookRecommendation({
           Leitura recomendada para aprofundar
         </h2>
         {TAG_AFILIADO_AMAZON ? (
-          <span className="text-[11px] text-ink-3">Link de parceiro</span>
+          <span className="text-[11px] text-ink-3">
+            Como Associado da Amazon, ganhamos com compras qualificadas
+          </span>
         ) : null}
       </div>
 

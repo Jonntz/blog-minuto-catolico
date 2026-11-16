@@ -85,7 +85,8 @@ export function SiteFooter() {
           <p className="max-w-[70ch] text-xs leading-relaxed text-ink-3">
             As matérias são adaptadas em português a partir das fontes
             indicadas, com link para o texto original. Nenhum conteúdo é
-            republicado na íntegra.
+            republicado na íntegra. Como Associado da Amazon, o Minuto Católico
+            ganha com compras qualificadas.
           </p>
           <p className="mt-3 text-xs text-ink-3">
             © 2026 Minuto Católico
