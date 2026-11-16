@@ -2,6 +2,7 @@ import { connection } from "next/server";
 import {
   IDIOMA,
   NOME_SITE,
+  ROTA_ARQUIVO,
   escaparXml,
   getSiteUrl,
   listarArtigosDesde,
@@ -41,11 +42,22 @@ export async function GET(): Promise<Response> {
   await connection();
 
   const base = await getSiteUrl();
-  const desde = Math.floor(Date.now() / 1000) - JANELA_HORAS * 3600;
+  // Arredonda para janelas de 5 minutos para aproveitar o cache ("use cache")
+  // sem fragmentar a chave a cada segundo.
+  const agoraArredondado = Math.floor(Date.now() / 300_000) * 300;
+  const desde = agoraArredondado - JANELA_HORAS * 3600;
   const artigos = await listarArtigosDesde(desde, MAX_URLS);
 
-  const corpo = artigos.map((a) => entrada(a, base)).join("\n");
-  const xml = `${CABECALHO}\n${corpo}${corpo ? "\n" : ""}</urlset>\n`;
+  // Pelo XSD oficial do Sitemaps (sitemap.xsd), `<urlset>` exige `minOccurs="1"`
+  // para `<url>`. Quando não há artigos nas últimas 48h, um `<urlset>` vazio é
+  // rejeitado pelo Google Search Console ("Tag XML ausente: url na linha 4").
+  // Nessa janela silenciosa, emitimos a URL do arquivo de notícias (`/noticias`)
+  // sem bloco `<news:news>`, mantendo o XML 100% válido sem violar a regra de 48h.
+  const corpo =
+    artigos.length > 0
+      ? artigos.map((a) => entrada(a, base)).join("\n")
+      : entradaFallback(base, agoraArredondado);
+  const xml = `${CABECALHO}\n${corpo}\n</urlset>\n`;
 
   return new Response(xml, {
     headers: {
@@ -60,6 +72,10 @@ export async function GET(): Promise<Response> {
 
 function entrada(artigo: ArtigoIndexavel, base: string): string {
   const url = `${base}${rotaArtigo(artigo.slug)}`;
+  // Se o artigo ficou na fila de rascunhos e foi adaptado/publicado em PT-BR
+  // depois do pubDate original da fonte, a data de publicação no nosso portal é
+  // `updatedAt`.
+  const dataPublicacao = Math.max(artigo.publishedAt, artigo.updatedAt);
   return [
     "  <url>",
     `    <loc>${escaparXml(url)}</loc>`,
@@ -69,9 +85,18 @@ function entrada(artigo: ArtigoIndexavel, base: string): string {
     // ISO 639-1 de duas letras. 'pt-BR' aqui é motivo de rejeição.
     `        <news:language>${IDIOMA}</news:language>`,
     "      </news:publication>",
-    `      <news:publication_date>${paraIso(artigo.publishedAt)}</news:publication_date>`,
+    `      <news:publication_date>${paraIso(dataPublicacao)}</news:publication_date>`,
     `      <news:title>${escaparXml(tituloArtigo(artigo))}</news:title>`,
     "    </news:news>",
+    "  </url>",
+  ].join("\n");
+}
+
+function entradaFallback(base: string, unixSegundos: number): string {
+  return [
+    "  <url>",
+    `    <loc>${escaparXml(`${base}${ROTA_ARQUIVO}`)}</loc>`,
+    `    <lastmod>${paraIso(unixSegundos)}</lastmod>`,
     "  </url>",
   ].join("\n");
 }

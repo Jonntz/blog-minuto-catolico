@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { cacheLife, cacheTag } from "next/cache";
-import { and, desc, eq, gte, isNotNull } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, or } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { TAGS } from "@/lib/articles";
 import { getCategoria, getCategoriaOuPadrao } from "@/lib/categories";
@@ -754,7 +754,13 @@ export async function listarArtigosPublicados(
     .limit(limite);
 }
 
-/** Artigos publicados a partir de um instante — a janela do Google News. */
+/**
+ * Artigos publicados ou adaptados a partir de um instante — a janela do Google News.
+ *
+ * Considera `publishedAt >= desdeUnix` OU `updatedAt >= desdeUnix` porque um
+ * rascunho ingerido há >48h e adaptado/publicado hoje em português acabou de
+ * entrar no ar no nosso portal e pertence à janela de 48h de publicação.
+ */
 export async function listarArtigosDesde(
   desdeUnix: number,
   limite: number,
@@ -771,10 +777,13 @@ export async function listarArtigosDesde(
       and(
         eq(schema.articles.status, "published"),
         isNotNull(schema.articles.title),
-        gte(schema.articles.publishedAt, desdeUnix),
+        or(
+          gte(schema.articles.publishedAt, desdeUnix),
+          gte(schema.articles.updatedAt, desdeUnix),
+        ),
       ),
     )
-    .orderBy(desc(schema.articles.publishedAt))
+    .orderBy(desc(schema.articles.updatedAt), desc(schema.articles.publishedAt))
     .limit(limite);
 }
 
