@@ -65,8 +65,8 @@ export function ArticleCard({
           priority={prioridadeDeImagem}
           sizes={
             destaque
-              ? "(min-width: 1024px) 780px, 100vw"
-              : "(min-width: 1024px) 380px, (min-width: 640px) 50vw, 100vw"
+              ? "(min-width: 1024px) 750px, 92vw"
+              : "(min-width: 1024px) 360px, (min-width: 640px) 45vw, 92vw"
           }
           className={cn(
             "rounded-none border-0 border-b",

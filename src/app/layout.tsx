@@ -109,16 +109,17 @@ export default function RootLayout({
     >
       <head>
         {/**
-         * Sem preconnect para os hosts de imagem das fontes — de propósito.
-         *
-         * Havia um para `res.cloudinary.com` e dois dns-prefetch (EWTN, SOTC).
-         * Nenhum era usado: toda imagem passa por `next/image`, ou seja, o
-         * navegador pede `/_next/image` ao PRÓPRIO domínio e quem busca o
-         * original é o Worker. Medido em 23/10/2026: zero requisições do
-         * navegador para esses hosts, e o Lighthouse acusando "Unused
-         * preconnect" — uma conexão TLS aberta à toa no caminho crítico do
-         * celular. Só volte a pôr se alguma imagem passar a sair sem otimizar.
+         * Preconnect para `res.cloudinary.com`: com `src/lib/image-loader.ts`
+         * servindo as fotos da EWTN diretamente da CDN do Cloudinary, abrir a
+         * conexão DNS+TCP+TLS já no primeiro pacote do `<head>` economiza
+         * ~450–600 ms no download da imagem LCP no 4G enquanto o `<Suspense>`
+         * de `<Destaques />` resolve no servidor.
          */}
+        <link
+          rel="preconnect"
+          href="https://res.cloudinary.com"
+          crossOrigin="anonymous"
+        />
         <script
           // Conteúdo estático definido em build. Não há entrada de usuário aqui.
           dangerouslySetInnerHTML={{ __html: SCRIPT_TEMA }}

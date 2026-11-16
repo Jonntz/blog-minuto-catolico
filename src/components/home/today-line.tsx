@@ -23,7 +23,7 @@ import { SaintCard } from "./saint-card";
 export async function TodayLine() {
   await connection();
   return (
-    <p className="text-xs tracking-[0.12em] text-ink-3 uppercase">
+    <p className="h-4 text-xs leading-4 tracking-[0.12em] text-ink-3 uppercase">
       {diaPorExtenso(new Date())}
     </p>
   );
@@ -32,8 +32,8 @@ export async function TodayLine() {
 /** Reserva a altura exata da linha para o streaming não deslocar o título. */
 export function TodayLineSkeleton() {
   return (
-    <p aria-hidden="true" className="text-xs uppercase">
-      <span className="inline-block h-[1em] w-[26ch] max-w-full rounded bg-surface-2 align-middle" />
+    <p aria-hidden="true" className="h-4 text-xs leading-4 uppercase">
+      <span className="inline-block h-3 w-[26ch] max-w-full rounded bg-surface-2 align-middle" />
     </p>
   );
 }

@@ -24,6 +24,8 @@ import {
   buscarEditorial,
   listarDestaquesDaSemana,
   listarPaginado,
+  listarPublicados,
+  type PaginaDeArtigos,
 } from "@/lib/articles";
 import { CATEGORIAS, classesTom } from "@/lib/categories";
 import { metadataHome, ROTA_ARQUIVO } from "@/lib/seo";
@@ -71,15 +73,8 @@ export default function Home() {
       </Suspense>
 
       <Suspense fallback={<UltimasSkeleton />}>
-        <Ultimas />
+        <AbaixoDaDobra />
       </Suspense>
-
-      <Suspense fallback={null}>
-        <FaixaEditorial />
-      </Suspense>
-
-      {/* Estático: não depende de dado nenhum, então é prerenderizado. */}
-      <Newsletter />
     </>
   );
 }
@@ -103,15 +98,12 @@ async function Destaques() {
   // longa em `src/components/layout/nav.ts`.
   await connection();
 
-  // Reusa `listarPaginado({ porPagina: NA_CAPA })` — a mesma chave de cache de
-  // `<Ultimas />` abaixo —, evitando uma segunda entrada no KV e uma segunda
-  // validação de tag no `NEXT_TAG_CACHE_D1` na mesma requisição.
-  const [pagina1, destaquesSemana] = await Promise.all([
-    listarPaginado({ porPagina: NA_CAPA }),
-    listarDestaquesDaSemana(4),
-  ]);
-
-  const [destaque, ...secundarios] = pagina1.artigos.slice(0, 3);
+  // `listarPublicados(3)` busca apenas as 3 linhas da dobra principal sem
+  // esperar por `COUNT(*)` nem por `listarDestaquesDaSemana`, liberando o HTML
+  // da imagem LCP o mais cedo possível e evitando colisão de chave `"use cache"`
+  // com `<Ultimas />` (MEMORY.md §2.9g).
+  const artigos = await listarPublicados(3);
+  const [destaque, ...secundarios] = artigos;
 
   return (
     <Container as="section" aria-labelledby="destaques">
@@ -147,14 +139,32 @@ async function Destaques() {
         </div>
 
         <aside className="flex flex-col gap-[clamp(16px,2vw,22px)] lg:sticky lg:top-[74px] lg:self-start">
-          <Suspense fallback={<LiturgyPanelSkeleton />}>
-            <LiturgyPanel />
+          <Suspense fallback={<SidebarSkeleton />}>
+            <ColunaLateral />
           </Suspense>
-
-          <WeeklyHighlights artigos={destaquesSemana} />
         </aside>
       </div>
     </Container>
+  );
+}
+
+async function ColunaLateral() {
+  await connection();
+  const destaquesSemana = await listarDestaquesDaSemana(4);
+  return (
+    <>
+      <LiturgyPanel />
+      <WeeklyHighlights artigos={destaquesSemana} />
+    </>
+  );
+}
+
+function SidebarSkeleton() {
+  return (
+    <div aria-hidden="true" className="flex flex-col gap-5">
+      <LiturgyPanelSkeleton />
+      <div className="h-[320px] rounded-[18px] border border-line bg-surface-2" />
+    </div>
   );
 }
 
@@ -180,23 +190,55 @@ function SemNoticiasAinda() {
   );
 }
 
-/** Reserva a silhueta da dobra principal para o streaming não deslocar nada. */
+/**
+ * Reserva a silhueta exata da dobra principal (incluindo a altura do corpo de
+ * texto do card de destaque e dos dois secundários) para o streaming não
+ * deslocar nada no viewport do Desktop nem do Mobile (CLS = 0).
+ */
 function DestaquesSkeleton() {
   return (
     <Container aria-hidden="true">
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-10">
         <div className="flex min-w-0 flex-col gap-5">
-          <div className="aspect-[16/10] rounded-[18px] bg-surface-2" />
+          <div className="overflow-hidden rounded-[18px] border border-line bg-surface shadow-card">
+            <div className="aspect-[16/9] bg-surface-2" />
+            <div className="h-[248px] p-6 sm:h-[264px] sm:p-8" />
+          </div>
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            <div className="h-64 rounded-[18px] bg-surface-2" />
-            <div className="h-64 rounded-[18px] bg-surface-2" />
+            <div className="overflow-hidden rounded-[18px] border border-line bg-surface shadow-card">
+              <div className="aspect-[16/10] bg-surface-2" />
+              <div className="h-[210px] p-5" />
+            </div>
+            <div className="overflow-hidden rounded-[18px] border border-line bg-surface shadow-card">
+              <div className="aspect-[16/10] bg-surface-2" />
+              <div className="h-[210px] p-5" />
+            </div>
           </div>
         </div>
-        <div className="flex flex-col gap-5">
-          <LiturgyPanelSkeleton />
-        </div>
+        <SidebarSkeleton />
       </div>
     </Container>
+  );
+}
+
+/**
+ * Agrupa as seções abaixo da dobra numa única fronteira de streaming, junto com
+ * a `<Newsletter />`, para que a resolução assíncrona nunca empurre elementos
+ * estáticos repetidas vezes durante o carregamento.
+ */
+async function AbaixoDaDobra() {
+  await connection();
+  const [pagina1, artigoEditorial] = await Promise.all([
+    listarPaginado({ porPagina: NA_CAPA }),
+    buscarEditorial(),
+  ]);
+
+  return (
+    <>
+      <Ultimas pagina1={pagina1} />
+      <Editorial artigo={artigoEditorial} />
+      <Newsletter />
+    </>
   );
 }
 
@@ -210,9 +252,8 @@ function DestaquesSkeleton() {
  */
 const NA_CAPA = 12;
 
-async function Ultimas() {
-  await connection();
-  const { artigos, total } = await listarPaginado({ porPagina: NA_CAPA });
+function Ultimas({ pagina1 }: { pagina1: PaginaDeArtigos }) {
+  const { artigos, total } = pagina1;
   const doFiltro = artigos.slice(3);
   if (doFiltro.length === 0) return null;
 
@@ -279,15 +320,9 @@ function UltimasSkeleton() {
       <div className="h-14 w-64 rounded bg-surface-2" />
       <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {Array.from({ length: 6 }, (_, i) => (
-          <div key={i} className="h-64 rounded-[18px] bg-surface-2" />
+          <div key={i} className="h-[420px] rounded-[18px] bg-surface-2" />
         ))}
       </div>
     </Container>
   );
-}
-
-async function FaixaEditorial() {
-  await connection();
-  const artigo = await buscarEditorial();
-  return <Editorial artigo={artigo} />;
 }

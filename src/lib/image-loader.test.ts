@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import carregadorDeImagem from "./image-loader";
 
 describe("carregadorDeImagem (loader customizado next/image)", () => {
-  it("injeta parâmetros de largura, qualidade e f_auto em URLs do Cloudinary", () => {
+  it("injeta parâmetros de largura, q_auto:eco e f_auto em URLs do Cloudinary", () => {
     const original =
       "https://res.cloudinary.com/ewtn/image/upload/v1785169101/ewtn-news/en/IMG_8844_qalyzn.jpg";
     const otimizada = carregadorDeImagem({
@@ -13,7 +13,7 @@ describe("carregadorDeImagem (loader customizado next/image)", () => {
     });
     assert.equal(
       otimizada,
-      "https://res.cloudinary.com/ewtn/image/upload/f_auto,q_75,w_750,c_limit/v1785169101/ewtn-news/en/IMG_8844_qalyzn.jpg",
+      "https://res.cloudinary.com/ewtn/image/upload/f_auto,q_auto:eco,w_750,c_limit/v1785169101/ewtn-news/en/IMG_8844_qalyzn.jpg",
     );
   });
 
@@ -26,7 +26,7 @@ describe("carregadorDeImagem (loader customizado next/image)", () => {
     });
     assert.equal(
       otimizada,
-      `https://substackcdn.com/image/fetch/w_640,c_limit,f_auto,q_auto:good/${encodeURIComponent(s3)}`,
+      `https://substackcdn.com/image/fetch/w_640,c_limit,f_auto,q_auto:eco/${encodeURIComponent(s3)}`,
     );
   });
 
