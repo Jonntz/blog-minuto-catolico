@@ -32,8 +32,11 @@ export async function TodayLine() {
 /** Reserva a altura exata da linha para o streaming não deslocar o título. */
 export function TodayLineSkeleton() {
   return (
-    <p aria-hidden="true" className="h-4 text-xs leading-4 uppercase">
-      <span className="inline-block h-3 w-[26ch] max-w-full rounded bg-surface-2 align-middle" />
+    <p
+      aria-hidden="true"
+      className="h-4 text-xs leading-4 tracking-[0.12em] text-ink-3 uppercase"
+    >
+      &nbsp;
     </p>
   );
 }

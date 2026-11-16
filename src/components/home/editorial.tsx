@@ -25,7 +25,7 @@ export function Editorial({ artigo }: { artigo: ArtigoCard | undefined }) {
     <section
       id="opiniao"
       aria-labelledby="editorial-titulo"
-      className="mt-20 border-y border-line bg-surface [content-visibility:auto] [contain-intrinsic-size:auto_480px]"
+      className="mt-20 border-y border-line bg-surface"
     >
       <h2 id="editorial-titulo" className="sr-only">
         Opinião

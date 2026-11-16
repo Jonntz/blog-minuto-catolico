@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { Suspense } from "react";
 import { Container } from "@/components/ui/container";
 import {
   PAGINAS_INSTITUCIONAIS,
@@ -19,6 +18,8 @@ import { itensDoRodape } from "./nav";
  * portal que reescreve matéria alheia precisa dizer isso em público.
  */
 export function SiteFooter() {
+  const editorias = itensDoRodape();
+
   return (
     <footer className="mt-24 border-t border-line bg-surface-2">
       <Container className="py-14">
@@ -37,18 +38,15 @@ export function SiteFooter() {
               <p className="mb-3.5 text-xs tracking-[0.12em] text-ink-3 uppercase">
                 Editorias
               </p>
-              {/* A lista depende do D1 (só editoria com conteúdo entra), e o
-                  binding não existe em tempo de build — daí a fronteira de
-                  streaming. O resto do rodapé é prerenderizado. */}
-              <Suspense fallback={<div className="h-24" />}>
-                <ListaDeEditorias />
-              </Suspense>
+              <ul className="grid grid-cols-2 gap-x-10 gap-y-2.5">
+                {editorias.map((item) => (
+                  <li key={item.href}>
+                    <LinkDoRodape href={item.href}>{item.label}</LinkDoRodape>
+                  </li>
+                ))}
+              </ul>
             </nav>
 
-            {/* Institucional é conteúdo estático: fica FORA do Suspense, e por
-                isso é prerenderizado junto com a casca. Ter privacidade e
-                política editorial alcançáveis de qualquer página é requisito de
-                confiança (e de E-E-A-T), não enfeite de rodapé. */}
             <nav aria-label="Institucional">
               <p className="mb-3.5 text-xs tracking-[0.12em] text-ink-3 uppercase">
                 O portal
@@ -94,20 +92,6 @@ export function SiteFooter() {
         </div>
       </Container>
     </footer>
-  );
-}
-
-async function ListaDeEditorias() {
-  const editorias = await itensDoRodape();
-
-  return (
-    <ul className="grid grid-cols-2 gap-x-10 gap-y-2.5">
-      {editorias.map((item) => (
-        <li key={item.href}>
-          <LinkDoRodape href={item.href}>{item.label}</LinkDoRodape>
-        </li>
-      ))}
-    </ul>
   );
 }
 

@@ -68,113 +68,86 @@ export default function Home() {
 
       <Masthead />
 
-      <Suspense fallback={<DestaquesSkeleton />}>
-        <Destaques />
+      <Suspense fallback={<CapaSkeleton />}>
+        <ConteudoCapa />
       </Suspense>
 
-      <Suspense fallback={<UltimasSkeleton />}>
-        <AbaixoDaDobra />
-      </Suspense>
+      {/* Estático: não depende de dado nenhum, então é prerenderizado. */}
+      <Newsletter />
     </>
   );
 }
 
 /**
- * Dobra principal: manchetes à esquerda, coluna litúrgica à direita.
+ * Toda a área de dados da capa num único `<Suspense>`:
  *
- * A coluna da direita fica FORA do `if` de manchetes de propósito. Antes ela
- * era filha do bloco de destaques, que retorna nada quando não há artigo
- * publicado — e levava a liturgia junto. Resultado: portal recém-publicado, ou
- * com a fila de adaptação represada, aparecia completamente vazio, apesar de o
- * calendário de 1962 estar gravado no banco.
- *
- * A liturgia é conteúdo PRÓPRIO: não vem de fonte externa, não passa por
- * adaptação e não depende de cota de IA. Não faz sentido que a ausência de
- * notícia a esconda — é justamente o que sustenta a capa enquanto a fila drena.
+ * - As 4 consultas (`listarPublicados`, `listarDestaquesDaSemana`,
+ *   `listarPaginado`, `buscarEditorial`) e `<LiturgyPanel />` são `"use cache"`
+ *   e rodam em paralelo num único `Promise.all`.
+ * - Uma única troca de DOM substitui `<CapaSkeleton />` pelo conteúdo completo,
+ *   sem que `<LiturgyPanel />`, `<WeeklyHighlights />`, `<Ultimas />` e
+ *   `<Editorial />` resolvam em quadros diferentes e empurrem uns aos outros
+ *   (CLS = 0).
  */
-async function Destaques() {
-  // `connection()` porque o binding do D1 não existe no build — e porque o que
-  // fosse pré-renderizado viria do banco LOCAL, não do de produção. Ver a nota
-  // longa em `src/components/layout/nav.ts`.
+async function ConteudoCapa() {
   await connection();
 
-  // `listarPublicados(3)` busca apenas as 3 linhas da dobra principal sem
-  // esperar por `COUNT(*)` nem por `listarDestaquesDaSemana`, liberando o HTML
-  // da imagem LCP o mais cedo possível e evitando colisão de chave `"use cache"`
-  // com `<Ultimas />` (MEMORY.md §2.9g).
-  const artigos = await listarPublicados(3);
-  const [destaque, ...secundarios] = artigos;
+  const [artigosTopo, destaquesSemana, pagina1, artigoEditorial] =
+    await Promise.all([
+      listarPublicados(3),
+      listarDestaquesDaSemana(4),
+      listarPaginado({ porPagina: NA_CAPA }),
+      buscarEditorial(),
+    ]);
 
-  return (
-    <Container as="section" aria-labelledby="destaques">
-      {/* O design não desenha título nesta faixa — as manchetes falam por si.
-          Mas sem um h2 a estrutura saltaria de h1 (masthead) direto para os h3
-          dos cards, e quem navega por cabeçalhos perderia o degrau. */}
-      <h2 id="destaques" className="sr-only">
-        Destaques da capa
-      </h2>
+  const [destaque, ...secundarios] = artigosTopo;
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-10">
-        <div className="flex min-w-0 flex-col gap-5">
-          {destaque ? (
-            <>
-              {/* Sem Reveal e com priority na imagem: é o LCP da capa. */}
-              <ArticleCard
-                artigo={destaque}
-                variante="destaque"
-                prioridadeDeImagem
-              />
-
-              {secundarios.length > 0 ? (
-                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                  {secundarios.map((artigo) => (
-                    <ArticleCard key={artigo.slug} artigo={artigo} />
-                  ))}
-                </div>
-              ) : null}
-            </>
-          ) : (
-            <SemNoticiasAinda />
-          )}
-        </div>
-
-        <aside className="flex flex-col gap-[clamp(16px,2vw,22px)] lg:sticky lg:top-[74px] lg:self-start">
-          <Suspense fallback={<SidebarSkeleton />}>
-            <ColunaLateral />
-          </Suspense>
-        </aside>
-      </div>
-    </Container>
-  );
-}
-
-async function ColunaLateral() {
-  await connection();
-  const destaquesSemana = await listarDestaquesDaSemana(4);
   return (
     <>
-      <LiturgyPanel />
-      <WeeklyHighlights artigos={destaquesSemana} />
-    </>
-  );
-}
+      <Container as="section" aria-labelledby="destaques">
+        <h2 id="destaques" className="sr-only">
+          Destaques da capa
+        </h2>
 
-function SidebarSkeleton() {
-  return (
-    <div aria-hidden="true" className="flex flex-col gap-5">
-      <LiturgyPanelSkeleton />
-      <div className="h-[320px] rounded-[18px] border border-line bg-surface-2" />
-    </div>
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-10">
+          <div className="flex min-w-0 flex-col gap-5">
+            {destaque ? (
+              <>
+                {/* Sem Reveal e com priority na imagem: é o LCP da capa. */}
+                <ArticleCard
+                  artigo={destaque}
+                  variante="destaque"
+                  prioridadeDeImagem
+                />
+
+                {secundarios.length > 0 ? (
+                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                    {secundarios.map((artigo) => (
+                      <ArticleCard key={artigo.slug} artigo={artigo} />
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <SemNoticiasAinda />
+            )}
+          </div>
+
+          <aside className="flex flex-col gap-[clamp(16px,2vw,22px)] lg:sticky lg:top-[74px] lg:self-start">
+            <LiturgyPanel />
+            <WeeklyHighlights artigos={destaquesSemana} />
+          </aside>
+        </div>
+      </Container>
+
+      <Ultimas pagina1={pagina1} />
+      <Editorial artigo={artigoEditorial} />
+    </>
   );
 }
 
 /**
  * Estado real de um portal cuja fila ainda não drenou.
- *
- * Dizer o que está acontecendo é melhor que uma coluna em branco: o leitor
- * entende que o site está vivo, e a liturgia ao lado prova. Sem promessa de
- * horário — a cadência depende de cota de IA e prometer o que não se controla
- * é pior que não prometer.
  */
 function SemNoticiasAinda() {
   return (
@@ -191,54 +164,26 @@ function SemNoticiasAinda() {
 }
 
 /**
- * Reserva a silhueta exata da dobra principal (incluindo a altura do corpo de
- * texto do card de destaque e dos dois secundários) para o streaming não
- * deslocar nada no viewport do Desktop nem do Mobile (CLS = 0).
+ * Reserva a altura total da área dinâmica (~2600px) para que `<Newsletter />` e
+ * `<SiteFooter />` já fiquem posicionados fora do viewport inicial antes e
+ * depois do streaming (CLS = 0.000).
  */
-function DestaquesSkeleton() {
+function CapaSkeleton() {
   return (
-    <Container aria-hidden="true">
+    <Container aria-hidden="true" className="min-h-[2600px]">
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-10">
         <div className="flex min-w-0 flex-col gap-5">
-          <div className="overflow-hidden rounded-[18px] border border-line bg-surface shadow-card">
-            <div className="aspect-[16/9] bg-surface-2" />
-            <div className="h-[248px] p-6 sm:h-[264px] sm:p-8" />
-          </div>
+          <div className="aspect-[16/10] rounded-[18px] bg-surface-2" />
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            <div className="overflow-hidden rounded-[18px] border border-line bg-surface shadow-card">
-              <div className="aspect-[16/10] bg-surface-2" />
-              <div className="h-[210px] p-5" />
-            </div>
-            <div className="overflow-hidden rounded-[18px] border border-line bg-surface shadow-card">
-              <div className="aspect-[16/10] bg-surface-2" />
-              <div className="h-[210px] p-5" />
-            </div>
+            <div className="h-64 rounded-[18px] bg-surface-2" />
+            <div className="h-64 rounded-[18px] bg-surface-2" />
           </div>
         </div>
-        <SidebarSkeleton />
+        <div className="flex flex-col gap-5">
+          <LiturgyPanelSkeleton />
+        </div>
       </div>
     </Container>
-  );
-}
-
-/**
- * Agrupa as seções abaixo da dobra numa única fronteira de streaming, junto com
- * a `<Newsletter />`, para que a resolução assíncrona nunca empurre elementos
- * estáticos repetidas vezes durante o carregamento.
- */
-async function AbaixoDaDobra() {
-  await connection();
-  const [pagina1, artigoEditorial] = await Promise.all([
-    listarPaginado({ porPagina: NA_CAPA }),
-    buscarEditorial(),
-  ]);
-
-  return (
-    <>
-      <Ultimas pagina1={pagina1} />
-      <Editorial artigo={artigoEditorial} />
-      <Newsletter />
-    </>
   );
 }
 
@@ -277,11 +222,7 @@ function Ultimas({ pagina1 }: { pagina1: PaginaDeArtigos }) {
   }));
 
   return (
-    <Container
-      as="section"
-      aria-labelledby="ultimas"
-      className="mt-20 [content-visibility:auto] [contain-intrinsic-size:auto_760px]"
-    >
+    <Container as="section" aria-labelledby="ultimas" className="mt-20">
       <Reveal>
         <SectionHeading
           id="ultimas"
@@ -310,19 +251,6 @@ function Ultimas({ pagina1 }: { pagina1: PaginaDeArtigos }) {
           </p>
         </div>
       </Reveal>
-    </Container>
-  );
-}
-
-function UltimasSkeleton() {
-  return (
-    <Container aria-hidden="true" className="mt-20">
-      <div className="h-14 w-64 rounded bg-surface-2" />
-      <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {Array.from({ length: 6 }, (_, i) => (
-          <div key={i} className="h-[420px] rounded-[18px] bg-surface-2" />
-        ))}
-      </div>
     </Container>
   );
 }
