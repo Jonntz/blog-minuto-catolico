@@ -32,6 +32,12 @@ const nextConfig: NextConfig = {
   },
 
   images: {
+    // Loader customizado que delega redimensionamento e conversão WebP/AVIF
+    // diretamente às CDNs das fontes (Cloudinary e Substack), evitando o erro
+    // 9422 de cota de 5.000 transformações/mês do binding IMAGES da Cloudflare.
+    loader: "custom",
+    loaderFile: "./src/lib/image-loader.ts",
+
     // Hosts das fontes. EWTN serve via Cloudinary; o Sign of the Cross serve o
     // og:image do próprio WordPress. Host novo precisa entrar aqui, senão o
     // next/image recusa em runtime.
