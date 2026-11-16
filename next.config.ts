@@ -209,6 +209,8 @@ export default nextConfig;
  * PT-BR exige binding remoto. Para isso:
  *   CLOUDFLARE_API_TOKEN=... CF_REMOTE_BINDINGS=true npm run dev
  */
-void initOpenNextCloudflareForDev({
-  remoteBindings: process.env.CF_REMOTE_BINDINGS === "true",
-});
+if (process.env.NODE_ENV === "development") {
+  void initOpenNextCloudflareForDev({
+    remoteBindings: process.env.CF_REMOTE_BINDINGS === "true",
+  });
+}

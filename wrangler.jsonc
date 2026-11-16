@@ -123,7 +123,9 @@
 		// Modelos do Workers AI — só entram em uso com TRANSLATION_PROVIDER=workersAi.
 		// Apelido de MODELOS_AVALIADOS ou id completo "@cf/...".
 		"WORKERS_AI_MODEL": "llama70b",
-		"WORKERS_AI_VERIFY_MODEL": "mistral24b"
+		"WORKERS_AI_VERIFY_MODEL": "mistral24b",
+		// Chave pública do IndexNow (espelhada em public/686b94694ba9d30238795853022e7eed.txt).
+		"INDEXNOW_KEY": "686b94694ba9d30238795853022e7eed"
 	}
 	// Segredos (NUNCA em vars):
 	//   wrangler secret put CRON_SECRET

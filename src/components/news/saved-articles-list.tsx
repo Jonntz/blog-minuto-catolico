@@ -5,9 +5,9 @@ import { useEffect, useState } from "react";
 import { obterArtigosSalvos } from "@/app/actions/saved";
 import { ArticleCard } from "@/components/article/article-card";
 import type { ArtigoCard } from "@/lib/articles";
-import { ROTA_ARQUIVO } from "@/lib/seo";
 
 const CHAVE_SALVOS = "bn-salvos";
+const ROTA_ARQUIVO = "/noticias";
 
 function lerSlugsLocal(): string[] {
   try {

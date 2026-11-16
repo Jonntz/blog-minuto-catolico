@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { ROTA_SALVOS } from "@/lib/seo";
 
 const CHAVE_SALVOS = "bn-salvos";
+const ROTA_SALVOS = "/salvos";
 
 const CLASSES_BOTAO =
   "inline-flex min-h-10 touch-manipulation items-center gap-1.5 rounded-full border border-line px-3.5 text-[12.5px] font-medium text-ink-2 transition-colors duration-200 ease-dc hover:border-ink-3 hover:text-ink";
