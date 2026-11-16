@@ -45,13 +45,13 @@ export async function generateMetadata({
    * daqui não quebra o PPR nem custa uma segunda ida ao banco — é a mesma chave
    * de cache que o corpo vai usar.
    */
-  const { totalDePaginas } = await listarPaginado({
+  const { total, totalDePaginas } = await listarPaginado({
     pagina: numero,
     porPagina: POR_PAGINA,
     categoria: slug,
   });
 
-  if (numero > 1 && numero > totalDePaginas) {
+  if (total === 0 || (numero > 1 && numero > totalDePaginas)) {
     return metadataNaoEncontrado();
   }
 
@@ -137,12 +137,27 @@ async function Arquivo({ searchParams }: Props) {
       ) : (
         <>
           <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {resultado.artigos.map((artigo, i) => (
-              <Reveal key={artigo.slug} delayMs={i * 50} className="h-full">
-                {/* `h2`: aqui os cards são filhos diretos do h1 do arquivo. */}
-                <ArticleCard artigo={artigo} nivelDoTitulo="h2" />
-              </Reveal>
-            ))}
+            {resultado.artigos.map((artigo, i) =>
+              // Os 3 primeiros cards ficam acima da dobra: sem `Reveal` (que
+              // esconde com `opacity-0` até a hidratação) e com `priority` na
+              // primeira foto para proteger o LCP da listagem.
+              i < 3 ? (
+                <ArticleCard
+                  key={artigo.slug}
+                  artigo={artigo}
+                  nivelDoTitulo="h2"
+                  prioridadeDeImagem={i === 0}
+                />
+              ) : (
+                <Reveal
+                  key={artigo.slug}
+                  delayMs={(i % 3) * 60}
+                  className="h-full"
+                >
+                  <ArticleCard artigo={artigo} nivelDoTitulo="h2" />
+                </Reveal>
+              ),
+            )}
           </div>
 
           <p className="mt-10 text-center text-[13px] text-ink-3">

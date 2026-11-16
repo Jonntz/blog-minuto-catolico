@@ -47,17 +47,28 @@ export function Newsletter() {
   return (
     <Container as="section" className="py-[clamp(48px,7vw,88px)] text-center">
       <h2 className="mx-auto max-w-[22ch] font-display text-[clamp(26px,3.6vw,40px)] leading-[1.1] font-semibold tracking-[-0.03em]">
-        Receba o resumo da manhã
+        Receba o boletim do portal
       </h2>
       <p className="mx-auto mt-3.5 max-w-[46ch] text-[15.5px] leading-[1.55] text-ink-2">
-        Cinco notícias, a liturgia do dia e um texto para rezar. Todos os dias,
-        às 6h.
+        As principais notícias da Igreja e a liturgia tradicional do Missal de
+        1962 direto no seu e-mail.
       </p>
 
       <form
         action={acao}
         className="mx-auto mt-6 flex max-w-[480px] flex-wrap justify-center gap-2.5"
       >
+        {/* Honeypot anti-spam: invisível para pessoas e leitores de tela. */}
+        <div aria-hidden="true" className="hidden">
+          <label htmlFor="newsletter-website">Não preencha este campo</label>
+          <input
+            id="newsletter-website"
+            type="text"
+            name="website"
+            tabIndex={-1}
+            autoComplete="off"
+          />
+        </div>
         <label htmlFor="newsletter-email" className="sr-only">
           E-mail
         </label>

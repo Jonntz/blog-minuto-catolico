@@ -1,4 +1,4 @@
-import { and, desc, eq, like, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, like, ne, or, sql } from "drizzle-orm";
 import { cacheLife, cacheTag } from "next/cache";
 import { getDb } from "@/db";
 import { articles, liturgicalDays, type Article, type LiturgicalDay } from "@/db/schema";
@@ -38,18 +38,49 @@ export const TAGS = {
 /** Só artigos aprovados vão ao ar. `draft` e `failed_validation` nunca. */
 const PUBLICADO = eq(articles.status, "published");
 
+/**
+ * Projeção enxuta para listagens e cards.
+ *
+ * `SELECT *` trazia `sourceExcerpt` (até 6.000 caracteres em inglês) e
+ * `bodyMd` (~2.500 caracteres) para cada card da capa, arquivo e categorias —
+ * ~170 KB de texto serializado/desserializado no KV e no Worker que nenhum card
+ * jamais exibe. Selecionar apenas o que o card consome reduz em ~90% o volume
+ * trafegado do D1 e o tempo de CPU de `JSON.parse` sob o limite de 10 ms do
+ * plano Workers Free.
+ */
+export const COLUNAS_CARD = {
+  id: articles.id,
+  slug: articles.slug,
+  title: articles.title,
+  dek: articles.dek,
+  source: articles.source,
+  sourceName: articles.sourceName,
+  sourceUrl: articles.sourceUrl,
+  sourceTitle: articles.sourceTitle,
+  sourceAuthor: articles.sourceAuthor,
+  categorySlug: articles.categorySlug,
+  tags: articles.tags,
+  imageUrl: articles.imageUrl,
+  imageCredit: articles.imageCredit,
+  imageCaption: articles.imageCaption,
+  publishedAt: articles.publishedAt,
+  updatedAt: articles.updatedAt,
+} as const;
+
+export type ArtigoCard = Pick<Article, keyof typeof COLUNAS_CARD>;
+
 // ---------------------------------------------------------------------------
 // Artigos
 // ---------------------------------------------------------------------------
 
-export async function listarPublicados(limite = 30): Promise<Article[]> {
+export async function listarPublicados(limite = 30): Promise<ArtigoCard[]> {
   "use cache";
   cacheLife("homeFeed");
   cacheTag(TAGS.feedHome);
 
   const db = await getDb();
   return db
-    .select()
+    .select(COLUNAS_CARD)
     .from(articles)
     .where(PUBLICADO)
     .orderBy(desc(articles.publishedAt))
@@ -64,7 +95,7 @@ export async function listarPublicados(limite = 30): Promise<Article[]> {
  * armadilha para quem navega por teclado ou por link direto.
  */
 export interface PaginaDeArtigos {
-  artigos: Article[];
+  artigos: ArtigoCard[];
   /** Total de publicados que casam com o filtro. */
   total: number;
   /** Página atual, 1-based e já saneada. */
@@ -115,23 +146,34 @@ export async function listarPaginado(
 
   const db = await getDb();
 
-  const [{ total }] = await db
-    .select({ total: sql<number>`count(*)` })
-    .from(articles)
-    .where(filtro);
+  // Contagem e página solicitada rodam em paralelo — na página 1 (99% das
+  // leituras, incluindo a capa) isso corta uma ida sequencial ao D1.
+  const [[{ total }], artigosPedida] = await Promise.all([
+    db.select({ total: sql<number>`count(*)` }).from(articles).where(filtro),
+    db
+      .select(COLUNAS_CARD)
+      .from(articles)
+      .where(filtro)
+      .orderBy(desc(articles.publishedAt))
+      .limit(porPagina)
+      .offset((pedida - 1) * porPagina),
+  ]);
 
   const totalDePaginas = Math.max(1, Math.ceil(total / porPagina));
   // Página além do fim volta para a última em vez de devolver lista vazia:
   // link velho compartilhado no WhatsApp continua levando a algum lugar útil.
   const pagina = Math.min(pedida, totalDePaginas);
 
-  const artigos = await db
-    .select()
-    .from(articles)
-    .where(filtro)
-    .orderBy(desc(articles.publishedAt))
-    .limit(porPagina)
-    .offset((pagina - 1) * porPagina);
+  const artigos =
+    pagina === pedida
+      ? artigosPedida
+      : await db
+          .select(COLUNAS_CARD)
+          .from(articles)
+          .where(filtro)
+          .orderBy(desc(articles.publishedAt))
+          .limit(porPagina)
+          .offset((pagina - 1) * porPagina);
 
   return { artigos, total, pagina, totalDePaginas };
 }
@@ -150,17 +192,38 @@ export async function buscarPorSlug(slug: string): Promise<Article | undefined> 
   return linhas[0];
 }
 
+export async function buscarPorSlugs(
+  slugs: readonly string[],
+): Promise<ArtigoCard[]> {
+  const limpos = [...new Set(slugs.map((s) => s.trim()).filter(Boolean))].slice(
+    0,
+    MAX_POR_PAGINA,
+  );
+  if (limpos.length === 0) return [];
+
+  const db = await getDb();
+  const linhas = await db
+    .select(COLUNAS_CARD)
+    .from(articles)
+    .where(and(PUBLICADO, inArray(articles.slug, limpos)));
+
+  const porSlug = new Map(linhas.map((l) => [l.slug, l]));
+  return limpos
+    .map((s) => porSlug.get(s))
+    .filter((a): a is ArtigoCard => a !== undefined);
+}
+
 export async function listarPorCategoria(
   categoria: string,
   limite = 30,
-): Promise<Article[]> {
+): Promise<ArtigoCard[]> {
   "use cache";
   cacheLife("category");
   cacheTag(TAGS.categoria(categoria));
 
   const db = await getDb();
   return db
-    .select()
+    .select(COLUNAS_CARD)
     .from(articles)
     .where(and(PUBLICADO, eq(articles.categorySlug, categoria)))
     .orderBy(desc(articles.publishedAt))
@@ -189,7 +252,7 @@ export async function categoriasComConteudo(): Promise<string[]> {
 export async function listarRelacionados(
   artigo: Pick<Article, "slug" | "categorySlug">,
   limite = 3,
-): Promise<Article[]> {
+): Promise<ArtigoCard[]> {
   "use cache";
   cacheLife("article");
   cacheTag(TAGS.categoria(artigo.categorySlug));
@@ -200,7 +263,7 @@ export async function listarRelacionados(
   // mais recentes de qualquer editoria — um bloco "Leia também" com um item só
   // fica pior que um com três.
   const daCategoria = await db
-    .select()
+    .select(COLUNAS_CARD)
     .from(articles)
     .where(
       and(
@@ -216,7 +279,7 @@ export async function listarRelacionados(
 
   const jaTem = new Set([artigo.slug, ...daCategoria.map((a) => a.slug)]);
   const recentes = await db
-    .select()
+    .select(COLUNAS_CARD)
     .from(articles)
     .where(PUBLICADO)
     .orderBy(desc(articles.publishedAt))
@@ -233,8 +296,12 @@ export async function listarRelacionados(
  *
  * NÃO é "mais lidas" — não há contagem de leitura no projeto. Ver o comentário
  * em `src/components/home/weekly-highlights.tsx`.
+ *
+ * Pula as 3 manchetes mais recentes (que já estão exibidas ao lado na coluna
+ * principal de `Destaques`) quando há acervo suficiente, evitando repetir os
+ * mesmos 3 títulos lado a lado na primeira dobra.
  */
-export async function listarDestaquesDaSemana(limite = 4): Promise<Article[]> {
+export async function listarDestaquesDaSemana(limite = 4): Promise<ArtigoCard[]> {
   "use cache";
   cacheLife("homeFeed");
   cacheTag(TAGS.feedHome);
@@ -243,33 +310,38 @@ export async function listarDestaquesDaSemana(limite = 4): Promise<Article[]> {
   const seteDiasAtras = Math.floor(Date.now() / 1000) - 7 * 24 * 3600;
 
   const daSemana = await db
-    .select()
+    .select(COLUNAS_CARD)
     .from(articles)
     .where(and(PUBLICADO, sql`${articles.publishedAt} >= ${seteDiasAtras}`))
     .orderBy(desc(articles.publishedAt))
-    .limit(limite);
+    .limit(limite + 3);
 
-  if (daSemana.length > 0) return daSemana;
+  if (daSemana.length > 3) return daSemana.slice(3, 3 + limite);
+  if (daSemana.length > 0) return daSemana.slice(0, limite);
 
   // Site recém-publicado ou semana vazia: cair para os mais recentes é melhor
   // que esconder o bloco.
-  return db
-    .select()
+  const recentes = await db
+    .select(COLUNAS_CARD)
     .from(articles)
     .where(PUBLICADO)
     .orderBy(desc(articles.publishedAt))
-    .limit(limite);
+    .limit(limite + 3);
+
+  return recentes.length > 3
+    ? recentes.slice(3, 3 + limite)
+    : recentes.slice(0, limite);
 }
 
 /** Artigo de opinião mais recente, para a faixa editorial da capa. */
-export async function buscarEditorial(): Promise<Article | undefined> {
+export async function buscarEditorial(): Promise<ArtigoCard | undefined> {
   "use cache";
   cacheLife("homeFeed");
   cacheTag(TAGS.categoria("opiniao"));
 
   const db = await getDb();
   const linhas = await db
-    .select()
+    .select(COLUNAS_CARD)
     .from(articles)
     .where(and(PUBLICADO, eq(articles.categorySlug, "opiniao")))
     .orderBy(desc(articles.publishedAt))
@@ -288,7 +360,7 @@ export async function buscarEditorial(): Promise<Article | undefined> {
  * NÃO tem `"use cache"`: o termo vem do usuário e cachear por termo arbitrário
  * enche o cache de entradas de uso único.
  */
-export async function buscar(termo: string, limite = 40): Promise<Article[]> {
+export async function buscar(termo: string, limite = 40): Promise<ArtigoCard[]> {
   const limpo = termo.trim();
   if (limpo.length < 2) return [];
 
@@ -298,7 +370,7 @@ export async function buscar(termo: string, limite = 40): Promise<Article[]> {
 
   const db = await getDb();
   return db
-    .select()
+    .select(COLUNAS_CARD)
     .from(articles)
     .where(
       and(
@@ -328,6 +400,27 @@ export async function buscarLiturgia(
     .where(eq(liturgicalDays.date, data))
     .limit(1);
   return linhas[0];
+}
+
+/**
+ * Lista os próximos dias do calendário litúrgico a partir de `dataInicial`
+ * (`YYYY-MM-DD`, inclusiva). Usado na página dedicada `/liturgia`.
+ */
+export async function listarLiturgiaAPartirDe(
+  dataInicial: string,
+  limite = 31,
+): Promise<LiturgicalDay[]> {
+  "use cache";
+  cacheLife("liturgy");
+  cacheTag(TAGS.limiteDoCalendario);
+
+  const db = await getDb();
+  return db
+    .select()
+    .from(liturgicalDays)
+    .where(gte(liturgicalDays.date, dataInicial))
+    .orderBy(asc(liturgicalDays.date))
+    .limit(Math.min(Math.max(1, limite), 90));
 }
 
 /**

@@ -1,7 +1,7 @@
 import { connection } from "next/server";
 import { categoriasComConteudo } from "@/lib/articles";
 import { CATEGORIAS } from "@/lib/categories";
-import { ROTA_ARQUIVO } from "@/lib/seo";
+import { ROTA_ARQUIVO, ROTA_LITURGIA, ROTA_SALVOS } from "@/lib/seo";
 import type { ItemDeNavegacao } from "./mobile-menu";
 
 /**
@@ -56,7 +56,9 @@ export async function itensDoMenuDeCelular(): Promise<
 > {
   return [
     ...(await itensDaNavegacao()),
+    { href: ROTA_LITURGIA, label: "Liturgia de 1962" },
     { href: ROTA_ARQUIVO, label: "Todas as notícias" },
+    { href: ROTA_SALVOS, label: "Matérias salvas" },
   ];
 }
 

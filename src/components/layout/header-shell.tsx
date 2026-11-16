@@ -45,6 +45,13 @@ export function HeaderShell({ children }: { children: React.ReactNode }) {
       const descendo = y > ultimoY.current;
       ultimoY.current = y;
 
+      // Se o menu mobile estiver aberto (`overflow: hidden` no `<html>`), nunca
+      // esconder a barra fixa — é nela que mora o botão de fechar o menu.
+      if (document.documentElement.style.overflow === "hidden") {
+        setEscondido(false);
+        return;
+      }
+
       // O limiar de 140px evita que o cabeçalho suma no primeiro toque de
       // rolagem, quando o masthead ainda está na tela.
       setEscondido(descendo && y > 140);
@@ -69,7 +76,7 @@ export function HeaderShell({ children }: { children: React.ReactNode }) {
   return (
     <header
       className={cn(
-        "fixed inset-x-0 top-0 z-50 transition-transform duration-300 ease-dc",
+        "fixed inset-x-0 top-0 z-50 transition-transform duration-300 ease-dc focus-within:translate-y-0",
         escondido && "-translate-y-full",
       )}
     >

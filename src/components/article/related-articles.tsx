@@ -1,4 +1,4 @@
-import type { Article } from "@/db/schema";
+import type { ArtigoCard } from "@/lib/articles";
 import { Reveal } from "@/components/ui/reveal";
 import { ArticleCard } from "./article-card";
 
@@ -10,7 +10,7 @@ import { ArticleCard } from "./article-card";
 export function RelatedArticles({
   artigos,
 }: {
-  artigos: readonly Article[];
+  artigos: readonly ArtigoCard[];
 }) {
   if (artigos.length === 0) return null;
 

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { MARCADOR_FONTE } from "@/services/translation/guardrails";
 
 /**
  * Renderizador do subconjunto de Markdown que a adaptação produz.
@@ -87,6 +88,17 @@ function inline(texto: string, chaveBase: string): ReactNode[] {
 }
 
 function bloco(texto: string, chave: string): ReactNode {
+  if (texto.startsWith("### ")) {
+    return (
+      <h3
+        key={chave}
+        className="mt-9 mb-3 font-display text-[20px] leading-[1.2] font-semibold tracking-[-0.02em] text-balance sm:text-[22px]"
+      >
+        {inline(texto.slice(4), chave)}
+      </h3>
+    );
+  }
+
   if (texto.startsWith("## ")) {
     return (
       <h2
@@ -99,12 +111,13 @@ function bloco(texto: string, chave: string): ReactNode {
   }
 
   if (texto.startsWith("> ")) {
+    const limpo = texto.replace(/^>\s?/gm, "");
     return (
       <blockquote
         key={chave}
         className="my-8 border-l-2 border-blue-f pl-5 font-serif text-[20px] leading-[1.5] text-ink italic sm:text-[22px]"
       >
-        {inline(texto.slice(2), chave)}
+        {inline(limpo, chave)}
       </blockquote>
     );
   }
@@ -134,7 +147,10 @@ export function ArticleBody({ markdown }: { markdown: string }) {
     .trim()
     .split(/\n{2,}/)
     .map((b) => b.trim())
-    .filter(Boolean);
+    // O bloco `> **Fonte:** [Nome](URL)` fica gravado em `bodyMd` por garantia
+    // de auditoria, mas a página já exibe `<SourceNote />` logo abaixo. Filtrar
+    // aqui evita repetir "Fonte: X" duas vezes seguidas no fim da matéria.
+    .filter((b) => b.length > 0 && !b.startsWith(MARCADOR_FONTE));
 
   return (
     // A serifada no corpo é a razão de a Newsreader estar carregada: título em

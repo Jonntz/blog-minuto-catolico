@@ -24,7 +24,6 @@ import {
   buscarEditorial,
   listarDestaquesDaSemana,
   listarPaginado,
-  listarPublicados,
 } from "@/lib/articles";
 import { CATEGORIAS, classesTom } from "@/lib/categories";
 import { metadataHome, ROTA_ARQUIVO } from "@/lib/seo";
@@ -71,7 +70,7 @@ export default function Home() {
         <Destaques />
       </Suspense>
 
-      <Suspense fallback={null}>
+      <Suspense fallback={<UltimasSkeleton />}>
         <Ultimas />
       </Suspense>
 
@@ -104,12 +103,15 @@ async function Destaques() {
   // longa em `src/components/layout/nav.ts`.
   await connection();
 
-  const [artigos, destaquesSemana] = await Promise.all([
-    listarPublicados(3),
+  // Reusa `listarPaginado({ porPagina: NA_CAPA })` — a mesma chave de cache de
+  // `<Ultimas />` abaixo —, evitando uma segunda entrada no KV e uma segunda
+  // validação de tag no `NEXT_TAG_CACHE_D1` na mesma requisição.
+  const [pagina1, destaquesSemana] = await Promise.all([
+    listarPaginado({ porPagina: NA_CAPA }),
     listarDestaquesDaSemana(4),
   ]);
 
-  const [destaque, ...secundarios] = artigos;
+  const [destaque, ...secundarios] = pagina1.artigos.slice(0, 3);
 
   return (
     <Container as="section" aria-labelledby="destaques">
@@ -234,7 +236,11 @@ async function Ultimas() {
   }));
 
   return (
-    <Container as="section" aria-labelledby="ultimas" className="mt-20">
+    <Container
+      as="section"
+      aria-labelledby="ultimas"
+      className="mt-20 [content-visibility:auto] [contain-intrinsic-size:auto_760px]"
+    >
       <Reveal>
         <SectionHeading
           id="ultimas"
@@ -263,6 +269,19 @@ async function Ultimas() {
           </p>
         </div>
       </Reveal>
+    </Container>
+  );
+}
+
+function UltimasSkeleton() {
+  return (
+    <Container aria-hidden="true" className="mt-20">
+      <div className="h-14 w-64 rounded bg-surface-2" />
+      <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 6 }, (_, i) => (
+          <div key={i} className="h-64 rounded-[18px] bg-surface-2" />
+        ))}
+      </div>
     </Container>
   );
 }

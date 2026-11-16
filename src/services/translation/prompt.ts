@@ -295,8 +295,6 @@ export function montarSistemaVerificacao(): string {
     "",
     "FORMATO DA RESPOSTA",
     "",
-    "Responda APENAS com um objeto JSON válido, sem texto antes ou depois:",
-    "",
     // Mesmo motivo da adaptação: pedir JSON aqui falhava. Medido — de 5
     // reprovações factuais, 4 eram "checagem não foi produzida", ou seja o
     // modelo não devolveu JSON parseável. Formato de linhas resolve.

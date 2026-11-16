@@ -1,4 +1,4 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { articles, ingestionRuns, liturgicalDays } from "@/db/schema";
@@ -18,6 +18,13 @@ import { articles, ingestionRuns, liturgicalDays } from "@/db/schema";
 
 /** Sem execução de ingestão neste prazo, algo está errado (cron é de 15 min). */
 const LIMITE_SEM_INGESTAO_S = 90 * 60;
+
+/**
+ * Se há rascunhos na fila e nenhuma adaptação publicou nada em 24h (ou 3+
+ * falhas seguidas de adaptação nas últimas 6h), o pipeline de publicação
+ * parou — como no incidente de 26/08–28/09/2026.
+ */
+const LIMITE_SEM_PUBLICACAO_COM_FILA_S = 24 * 3600;
 
 /**
  * Folga mínima do calendário litúrgico, em dias.
@@ -41,47 +48,71 @@ export async function GET(): Promise<NextResponse> {
   try {
     const db = await getDb();
 
-    const [porStatus, ultimaIngestao, ultimasFalhas, liturgiaHoje] =
-      await Promise.all([
-        db
-          .select({ status: articles.status, n: sql<number>`count(*)` })
-          .from(articles)
-          .groupBy(articles.status),
+    const [
+      porStatus,
+      ultimaIngestao,
+      ultimaPublicacao,
+      ultimasFalhas,
+      ultimasFalhasAdapt,
+      liturgiaHoje,
+    ] = await Promise.all([
+      db
+        .select({ status: articles.status, n: sql<number>`count(*)` })
+        .from(articles)
+        .groupBy(articles.status),
 
-        db
-          .select({
-            source: ingestionRuns.source,
-            finishedAt: ingestionRuns.finishedAt,
-            error: ingestionRuns.error,
-          })
-          .from(ingestionRuns)
-          .orderBy(desc(ingestionRuns.startedAt))
-          .limit(1),
+      // Filtra explicitamente pelas fontes de coleta RSS (`ewtn`, `montagna`).
+      // Sem o filtro, execuções vazias de `adapt` mascaravam parada total da
+      // coleta RSS.
+      db
+        .select({
+          source: ingestionRuns.source,
+          finishedAt: ingestionRuns.finishedAt,
+          error: ingestionRuns.error,
+        })
+        .from(ingestionRuns)
+        .where(inArray(ingestionRuns.source, ["ewtn", "montagna"]))
+        .orderBy(desc(ingestionRuns.startedAt))
+        .limit(1),
 
-        // Execuções seguidas com erro indicam problema persistente, não soluço.
-        db
-          .select({ n: sql<number>`count(*)` })
-          .from(ingestionRuns)
-          .where(
-            sql`${ingestionRuns.error} is not null and ${ingestionRuns.startedAt} >= ${agora - 6 * 3600}`,
-          ),
+      db
+        .select({
+          ultima: sql<number | null>`max( coalesce(${articles.adaptedAt}, ${articles.publishedAt}) )`,
+        })
+        .from(articles)
+        .where(sql`${articles.status} = 'published'`),
 
-        /**
-         * Uma consulta só responde às duas perguntas: "tem hoje?" e "até
-         * quando vai?". `date('now')` do SQLite é UTC; a diferença para
-         * `America/Sao_Paulo` é de no máximo um dia na virada, e para uma
-         * métrica de folga medida em dias isso não muda decisão nenhuma.
-         */
-        db
-          .select({
-            hoje: sql<number>`sum(case when ${liturgicalDays.date} = date('now') then 1 else 0 end)`,
-            ultimo: sql<string | null>`max(${liturgicalDays.date})`,
-            folga: sql<
-              number | null
-            >`cast(julianday(max(${liturgicalDays.date})) - julianday(date('now')) as integer)`,
-          })
-          .from(liturgicalDays),
-      ]);
+      // Execuções seguidas com erro indicam problema persistente, não soluço.
+      db
+        .select({ n: sql<number>`count(*)` })
+        .from(ingestionRuns)
+        .where(
+          sql`${ingestionRuns.error} is not null and ${ingestionRuns.startedAt} >= ${agora - 6 * 3600}`,
+        ),
+
+      db
+        .select({ n: sql<number>`count(*)` })
+        .from(ingestionRuns)
+        .where(
+          sql`${ingestionRuns.source} = 'adapt' and ${ingestionRuns.error} is not null and ${ingestionRuns.startedAt} >= ${agora - 6 * 3600}`,
+        ),
+
+      /**
+       * Uma consulta só responde às duas perguntas: "tem hoje?" e "até
+       * quando vai?". `date('now')` do SQLite é UTC; a diferença para
+       * `America/Sao_Paulo` é de no máximo um dia na virada, e para uma
+       * métrica de folga medida em dias isso não muda decisão nenhuma.
+       */
+      db
+        .select({
+          hoje: sql<number>`sum(case when ${liturgicalDays.date} = date('now') then 1 else 0 end)`,
+          ultimo: sql<string | null>`max(${liturgicalDays.date})`,
+          folga: sql<
+            number | null
+          >`cast(julianday(max(${liturgicalDays.date})) - julianday(date('now')) as integer)`,
+        })
+        .from(liturgicalDays),
+    ]);
 
     const contagens = Object.fromEntries(
       porStatus.map((l) => [l.status, Number(l.n)]),
@@ -94,6 +125,11 @@ export async function GET(): Promise<NextResponse> {
     const fimUltima = ultimaIngestao[0]?.finishedAt ?? null;
     const segundosSemIngestao = fimUltima === null ? null : agora - fimUltima;
     const falhasRecentes = Number(ultimasFalhas[0]?.n ?? 0);
+    const falhasAdaptRecentes = Number(ultimasFalhasAdapt[0]?.n ?? 0);
+
+    const ultimaPubSeg = ultimaPublicacao[0]?.ultima ?? null;
+    const segundosSemPublicacao =
+      ultimaPubSeg === null ? null : agora - Number(ultimaPubSeg);
 
     const temLiturgiaHoje = Number(liturgiaHoje[0]?.hoje ?? 0) > 0;
     const ultimoDiaLiturgia = liturgiaHoje[0]?.ultimo ?? null;
@@ -114,6 +150,18 @@ export async function GET(): Promise<NextResponse> {
       problemas.push("nenhum artigo publicado — o site está vazio");
     }
 
+    const adaptacaoParada =
+      naFila > 0 &&
+      (falhasAdaptRecentes >= 3 ||
+        (segundosSemPublicacao !== null &&
+          segundosSemPublicacao > LIMITE_SEM_PUBLICACAO_COM_FILA_S));
+
+    if (adaptacaoParada) {
+      problemas.push(
+        `fila com ${naFila} rascunho(s) e adaptação travada (${falhasAdaptRecentes} falha(s) de adaptação nas últimas 6h)`,
+      );
+    }
+
     if (!temLiturgiaHoje) {
       problemas.push(
         `sem liturgia gravada para hoje — o calendário termina em ${ultimoDiaLiturgia ?? "(tabela vazia)"}`,
@@ -131,14 +179,15 @@ export async function GET(): Promise<NextResponse> {
     }
 
     /**
-     * `parado` só quando o site está de fato inútil (sem conteúdo ou sem
-     * ingestão). Fila crescida ou liturgia atrasada é `degradado`: o portal
-     * continua servindo, mas alguém precisa olhar.
+     * `parado` (HTTP 503) quando o site está sem conteúdo, sem coleta RSS ou
+     * com a adaptação travada enquanto há fila pendente — assim um monitor
+     * externo como UptimeRobot alerta imediatamente em vez de receber 200 OK.
      */
     const estado: Estado =
       publicados === 0 ||
       segundosSemIngestao === null ||
-      segundosSemIngestao > LIMITE_SEM_INGESTAO_S
+      segundosSemIngestao > LIMITE_SEM_INGESTAO_S ||
+      adaptacaoParada
         ? "parado"
         : problemas.length > 0
           ? "degradado"

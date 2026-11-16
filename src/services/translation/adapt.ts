@@ -170,12 +170,22 @@ function logPadrao(evento: EventoAdaptacao): void {
 // Resumo
 // ---------------------------------------------------------------------------
 
+export interface ItemPublicado {
+  id: string;
+  slug: string;
+  categorySlug: string;
+  title: string;
+  dek: string;
+}
+
 export interface ResumoAdaptacao {
   provider: NomeProvider;
   modelo: string;
   /** Itens lidos da fila. */
   vistos: number;
   publicados: number;
+  /** Artigos efetivamente promovidos a `published` nesta execução. */
+  itensPublicados: ItemPublicado[];
   /** Foram para `failed_validation`. */
   reprovados: number;
   /** Continuam `draft` para a próxima execução. */
@@ -266,6 +276,16 @@ export interface LinhaPendente {
   sourceExcerpt: string | null;
   sourceLength: number;
   categorySlug: string;
+  validationErrors?: string[] | null;
+}
+
+/** Preserva marcador `requeue:N` entre tentativas para `requeue.ts` não usar `tokensIn`. */
+function anexarMarcadorRequeue(
+  erros: string[],
+  anteriores: readonly string[] | null | undefined,
+): string[] {
+  const marcador = anteriores?.find((e) => /^requeue:\d+$/.test(e));
+  return marcador ? [...erros, marcador] : erros;
 }
 
 /**
@@ -398,6 +418,7 @@ export async function adaptarPendentes(
     modelo: provider.modelo,
     vistos: 0,
     publicados: 0,
+    itensPublicados: [],
     reprovados: 0,
     adiados: 0,
     tokensIn: 0,
@@ -423,6 +444,7 @@ export async function adaptarPendentes(
       sourceExcerpt: articles.sourceExcerpt,
       sourceLength: articles.sourceLength,
       categorySlug: articles.categorySlug,
+      validationErrors: articles.validationErrors,
     })
     .from(articles)
     .where(
@@ -457,9 +479,14 @@ export async function adaptarPendentes(
     resumo.tokensIn += resultado.tokensIn ?? 0;
     resumo.tokensOut += resultado.tokensOut ?? 0;
 
-    if (resultado.destino === "published") resumo.publicados += 1;
-    else if (resultado.destino === "failed_validation") resumo.reprovados += 1;
-    else resumo.adiados += 1;
+    if (resultado.destino === "published") {
+      resumo.publicados += 1;
+      if (resultado.publicado) resumo.itensPublicados.push(resultado.publicado);
+    } else if (resultado.destino === "failed_validation") {
+      resumo.reprovados += 1;
+    } else {
+      resumo.adiados += 1;
+    }
 
     if (resultado.erroProvider) {
       falhasSeguidas += 1;
@@ -495,6 +522,8 @@ interface ResultadoItem {
   destino: StatusArtigo;
   tokensIn: number | null;
   tokensOut: number | null;
+  /** Preenchido quando o artigo foi efetivamente publicado. */
+  publicado?: ItemPublicado;
   /** Presente quando a falha veio do provider, não do conteúdo. */
   erroProvider?: ErroProvider;
 }
@@ -604,16 +633,10 @@ async function processarItem(
       // item volta a ser o primeiro da fila na execução seguinte, e trava tudo.
       await gravar(db, linha.id, {
         status: "draft",
-        /**
-         * Diagnóstico do ADIAMENTO, não reprovação.
-         *
-         * A linha continua `draft` e nada disto aparece no site (o portal
-         * filtra por `status = 'published'`). Está aqui porque diagnosticar um
-         * adiamento exigia capturar `wrangler tail` no exato instante da falha
-         * — tentado em 03/08 e o tail não capturou nada. Gravar o motivo torna
-         * a consulta ao D1 suficiente, dias depois.
-         */
-        validationErrors: [`adiado/${erro.tipo}: ${erro.mensagem}`],
+        validationErrors: anexarMarcadorRequeue(
+          [`adiado/${erro.tipo}: ${erro.mensagem}`],
+          linha.validationErrors,
+        ),
         providerUsed: provider.nome,
         modelUsed: provider.modelo,
         tokensIn,
@@ -676,7 +699,7 @@ async function processarItem(
       title: adaptacao.valor.titulo,
       dek: adaptacao.valor.dek,
       bodyMd: corpoEditorial,
-      validationErrors: veredito.erros,
+      validationErrors: anexarMarcadorRequeue(veredito.erros, linha.validationErrors),
       providerUsed: provider.nome,
       modelUsed: provider.modelo,
       tokensIn,
@@ -722,6 +745,10 @@ async function processarItem(
     linha.slug,
     adaptacao.valor.titulo,
   );
+  const categoriaFinal = refinarCategoria(
+    linha.categorySlug,
+    adaptacao.valor.categoriaSugerida,
+  );
 
   await gravar(db, linha.id, {
     status: "published",
@@ -731,7 +758,7 @@ async function processarItem(
     // A atribuição é acrescentada AQUI, por nós, a partir das colunas de
     // proveniência — nunca escrita pelo modelo, que poderia alucinar a URL.
     bodyMd: montarCorpoFinal(corpoEditorial, linha.sourceName, linha.sourceUrl),
-    categorySlug: refinarCategoria(linha.categorySlug, adaptacao.valor.categoriaSugerida),
+    categorySlug: categoriaFinal,
     tags: adaptacao.valor.tags,
     validationErrors: null,
     providerUsed: provider.nome,
@@ -745,11 +772,22 @@ async function processarItem(
   log({
     tipo: "item_publicado",
     id: linha.id,
-    slug: linha.slug,
+    slug: slugFinal,
     tokensIn,
     tokensOut,
   });
-  return { destino: "published", tokensIn, tokensOut };
+  return {
+    destino: "published",
+    tokensIn,
+    tokensOut,
+    publicado: {
+      id: linha.id,
+      slug: slugFinal,
+      categorySlug: categoriaFinal,
+      title: adaptacao.valor.titulo,
+      dek: adaptacao.valor.dek,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -810,7 +848,10 @@ async function tratarErroProvider(
       // adia sempre é indistinguível de um que nunca foi tentado. O prefixo
       // `adiado/` deixa claro que NÃO é reprovação — a linha segue `draft` e o
       // site nunca a mostra.
-      validationErrors: [`adiado/${erro.tipo}: ${erro.mensagem}`],
+      validationErrors: anexarMarcadorRequeue(
+        [`adiado/${erro.tipo}: ${erro.mensagem}`],
+        linha.validationErrors,
+      ),
       providerUsed: provider.nome,
       modelUsed: provider.modelo,
       tokensIn: uso.tokensIn,
@@ -824,7 +865,10 @@ async function tratarErroProvider(
 
   await gravar(db, linha.id, {
     status: "failed_validation",
-    validationErrors: [`${erro.tipo}: ${erro.mensagem}`],
+    validationErrors: anexarMarcadorRequeue(
+      [`${erro.tipo}: ${erro.mensagem}`],
+      linha.validationErrors,
+    ),
     providerUsed: provider.nome,
     modelUsed: provider.modelo,
     tokensIn: uso.tokensIn,

@@ -1,9 +1,9 @@
-import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { exigirCronSecret } from "@/lib/cron-auth";
 import { getDb, getEnv } from "@/db";
-import { articles, ingestionRuns } from "@/db/schema";
+import { ingestionRuns } from "@/db/schema";
 import { invalidarAposPublicar } from "@/lib/revalidate";
+import { notificarPublicacao, type EnvDistribuicao } from "@/services/distribution/notify";
 import { adaptarPendentes, paraIngestionRun } from "@/services/translation";
 import { requeueTransitorios } from "@/services/translation/requeue";
 
@@ -67,16 +67,24 @@ export async function POST(request: Request): Promise<NextResponse> {
     // Sob Cache Components, gravar no D1 NÃO faz o site mudar. Sem isto a
     // matéria fica publicada no banco e invisível no site — o modo de falha
     // mais confuso possível, porque o dado "está lá".
-    if (resumo.publicados > 0) {
-      const publicados = await db
-        .select({ slug: articles.slug, categorySlug: articles.categorySlug })
-        .from(articles)
-        .where(and(eq(articles.status, "published")))
-        .limit(resumo.publicados * 2);
-      invalidarAposPublicar(publicados);
+    // Usa exatamente a lista retornada por `adaptarPendentes` (antes fazia um
+    // SELECT sem ORDER BY que invalidava sempre os artigos mais antigos).
+    let distribuicao = null;
+    if (resumo.itensPublicados.length > 0) {
+      invalidarAposPublicar(resumo.itensPublicados);
+      distribuicao = await notificarPublicacao(
+        resumo.itensPublicados,
+        env as unknown as EnvDistribuicao,
+      );
     }
 
-    return NextResponse.json({ ok: true, runId, requeue, ...resumo });
+    return NextResponse.json({
+      ok: true,
+      runId,
+      requeue,
+      distribuicao,
+      ...resumo,
+    });
   } catch (erro) {
     const mensagem = erro instanceof Error ? erro.message : String(erro);
 

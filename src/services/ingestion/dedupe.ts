@@ -18,7 +18,7 @@
  * capturada, e o item é reinserido com sufixo de desambiguação.
  */
 
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import type { Db } from "@/db";
 import { articles } from "@/db/schema";
 import {
@@ -244,11 +244,10 @@ async function inserir(
 async function gravarItem(
   db: Db,
   item: ItemNormalizado,
+  dedupeHash: string,
+  contentHash: string,
   agora: number,
 ): Promise<"novo" | "duplicado" | "atualizado"> {
-  const dedupeHash = await hashDeduplicacao(item.urlCanonica);
-  const contentHash = await hashConteudoFonte(item.titulo, item.excerpt);
-
   const slugBase = gerarSlug(item.titulo) || slugDeFallback(sufixoCurto(dedupeHash));
 
   let inseriu: boolean;
@@ -292,13 +291,45 @@ async function gravarItem(
   return atualizou ? "atualizado" : "duplicado";
 }
 
+/** Teto de parâmetros por `IN (...)` no D1 (limite do SQLite/D1 é 100). */
+const LOTE_CONSULTA_HASH = 80;
+
+/**
+ * Busca de uma vez os `sourceContentHash` dos `dedupeHash` que já existem no D1.
+ *
+ * Reduz ~140 round-trips sequenciais (`INSERT` + `UPDATE`) a cada 15 min para
+ * uma única leitura quando os 70 itens dos feeds já estão gravados e inalterados.
+ */
+async function buscarHashesExistentes(
+  db: Db,
+  hashes: readonly string[],
+): Promise<ReadonlyMap<string, string>> {
+  const mapa = new Map<string, string>();
+  for (let i = 0; i < hashes.length; i += LOTE_CONSULTA_HASH) {
+    const fatia = hashes.slice(i, i + LOTE_CONSULTA_HASH);
+    if (fatia.length === 0) continue;
+    const linhas = await db
+      .select({
+        dedupeHash: articles.dedupeHash,
+        sourceContentHash: articles.sourceContentHash,
+      })
+      .from(articles)
+      .where(inArray(articles.dedupeHash, fatia));
+    for (const l of linhas) {
+      mapa.set(l.dedupeHash, l.sourceContentHash);
+    }
+  }
+  return mapa;
+}
+
 /**
  * Grava a coleta inteira.
  *
- * Sequencial de propósito: o rate limit já serializou a rede, e um item que
- * falha não pode derrubar os outros — cada um é contabilizado por si. Um lote
- * único (`db.batch`) seria mais rápido, mas é transacional no D1: uma colisão de
- * slug perderia o lote inteiro.
+ * Pré-filtra com um `SELECT ... WHERE dedupe_hash IN (...)` todos os itens já
+ * conhecidos cujo conteúdo não mudou na origem, evitando disparar dezenas de
+ * escritas inúteis no D1 a cada 15 minutos. O que resta (itens novos ou
+ * editados) continua passando pelo `INSERT ... ON CONFLICT DO NOTHING` para
+ * preservar a idempotência atômica no banco caso duas execuções se sobreponham.
  */
 export async function gravarItens(
   db: Db,
@@ -306,15 +337,46 @@ export async function gravarItens(
   agora: number,
 ): Promise<ResumoGravacao> {
   const resumo: ResumoGravacao = { novos: 0, duplicados: 0, atualizados: 0, falhas: 0 };
+  if (itens.length === 0) return resumo;
 
-  for (const item of itens) {
+  const preparados = await Promise.all(
+    itens.map(async (item) => ({
+      item,
+      dedupeHash: await hashDeduplicacao(item.urlCanonica),
+      contentHash: await hashConteudoFonte(item.titulo, item.excerpt),
+    })),
+  );
+
+  let existentes = new Map<string, string>();
+  try {
+    existentes = new Map(
+      await buscarHashesExistentes(
+        db,
+        preparados.map((p) => p.dedupeHash),
+      ),
+    );
+  } catch {
+    // Se a pré-consulta falhar (ou em mock de teste parcial), segue item a item.
+  }
+
+  for (const { item, dedupeHash, contentHash } of preparados) {
+    // Já está no banco com exatamente o mesmo conteúdo: zero escrita no D1.
+    if (existentes.get(dedupeHash) === contentHash) {
+      resumo.duplicados++;
+      continue;
+    }
+
     try {
-      const desfecho = await gravarItem(db, item, agora);
+      const desfecho = await gravarItem(db, item, dedupeHash, contentHash, agora);
       if (desfecho === "novo") {
         resumo.novos++;
+        existentes.set(dedupeHash, contentHash);
       } else {
         resumo.duplicados++;
-        if (desfecho === "atualizado") resumo.atualizados++;
+        if (desfecho === "atualizado") {
+          resumo.atualizados++;
+          existentes.set(dedupeHash, contentHash);
+        }
       }
     } catch (erro) {
       resumo.falhas++;

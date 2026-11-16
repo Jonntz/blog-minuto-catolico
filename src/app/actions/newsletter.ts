@@ -1,5 +1,6 @@
 "use server";
 
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { subscribers } from "@/db/schema";
@@ -30,6 +31,15 @@ export async function inscrever(
   _anterior: EstadoNewsletter | null,
   formData: FormData,
 ): Promise<EstadoNewsletter> {
+  // Honeypot anti-bot: campo oculto por CSS/ARIA que humanos nunca preenchem.
+  const armadilha = formData.get("website");
+  if (typeof armadilha === "string" && armadilha.trim().length > 0) {
+    return {
+      ok: true,
+      mensagem: "Pronto! Seu e-mail foi registrado.",
+    };
+  }
+
   const analise = esquema.safeParse({ email: formData.get("email") });
 
   if (!analise.success) {
@@ -49,10 +59,12 @@ export async function inscrever(
         createdAt: Math.floor(Date.now() / 1000),
         source: "newsletter-home",
       })
-      // Reinscrever não pode vazar que o e-mail já existe na base: isso
-      // transforma o formulário num oráculo de "fulano assina este site".
-      // Conflito é silencioso, e a resposta é a mesma dos dois lados.
-      .onConflictDoNothing({ target: subscribers.email });
+      // Reinscrever não pode vazar que o e-mail já existe na base, mas limpa
+      // `unsubscribed_at` caso a pessoa tenha cancelado antes e queira voltar.
+      .onConflictDoUpdate({
+        target: subscribers.email,
+        set: { unsubscribedAt: sql`null` },
+      });
 
     /**
      * ⚠️ NÃO prometer e-mail de confirmação aqui.

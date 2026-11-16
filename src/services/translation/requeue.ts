@@ -1,4 +1,4 @@
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "@/db";
 import { articles } from "@/db/schema";
 
@@ -10,13 +10,28 @@ import { articles } from "@/db/schema";
  * de recuperá-lo é `UPDATE` manual no banco.
  *
  * A distinção entre transitório e definitivo é o coração deste módulo, e ela é
- * conservadora de propósito: na dúvida, NÃO reprocessa. O motivo de custo
- * afrouxou quando o provider padrão passou a ser a NVIDIA (o teto agora é de
- * requisições por minuto, não de um orçamento diário de compute), mas o motivo
- * de FUNDO não mudou e é o que manda aqui: reprocessar um artigo legitimamente
- * ruim é apostar que numa próxima passagem o checador esteja mais permissivo —
- * ou seja, torcer para a validação falhar.
+ * conservadora de propósito: na dúvida, NÃO reprocessa.
+ *
+ * ## Contador de tentativas (`requeue:N`)
+ *
+ * Antes o módulo usava `articles.tokensIn` como contador (`tokens_in < 2`),
+ * porque o Workers AI devolvia `tokensIn = null`. Com a migração para a NVIDIA
+ * NIM, `tokensIn` passou a guardar os tokens reais (~3.800), o que impedia
+ * qualquer artigo com consumo registrado de ser reenfileirado e corrompia a
+ * telemetria de tokens. Agora o contador viaja como marcador `requeue:N` em
+ * `validationErrors`, preservando `tokensIn` exclusivamente para uso de IA.
  */
+
+const RE_MARCADOR_REQUEUE = /^requeue:(\d+)$/;
+
+/** Lê quantas vezes o artigo já foi devolvido à fila por `requeueTransitorios`. */
+export function lerTentativasRequeue(erros: readonly string[]): number {
+  for (const e of erros) {
+    const m = RE_MARCADOR_REQUEUE.exec(e.trim());
+    if (m?.[1]) return Number.parseInt(m[1], 10);
+  }
+  return 0;
+}
 
 /**
  * Causas que merecem nova tentativa: o problema foi de FORMA, não de conteúdo.
@@ -28,18 +43,6 @@ const CAUSAS_TRANSITORIAS = [
   // O checador não produziu veredito legível.
   "checagem factual não foi produzida",
 ] as const;
-
-/**
- * Causas DEFINITIVAS — nunca reprocessar:
- *  - `proporcao`: o texto é longo ou curto demais; reprocessar dá o mesmo.
- *  - `atribuicao`: falha de dado, não de modelo.
- *  - `numeros`: o modelo inventou número. Reprocessar é apostar que ele não
- *    invente de novo — e publicar número inventado é o pior erro possível
- *    num portal de notícias.
- *  - `idioma`, `recusa_do_modelo`, `rito_1962`, `glossario`: idem.
- *  - `verificacao_factual` COM divergências: houve veredito e ele apontou
- *    contradição real. Isso é conteúdo, não forma.
- */
 
 /** Não insistir para sempre num artigo problemático. */
 const MAX_TENTATIVAS = 2;
@@ -67,9 +70,6 @@ export async function requeueTransitorios(
       and(
         eq(articles.status, "failed_validation"),
         sql`${articles.publishedAt} >= ${agoraSeg - JANELA_REQUEUE_S}`,
-        // `tokens_in` é usado como contador de tentativas aqui: a adaptação o
-        // preenche a cada passagem. Acima do teto, o artigo já teve chances.
-        lt(sql`coalesce(${articles.tokensIn}, 0)`, MAX_TENTATIVAS),
       ),
     )
     .limit(50);
@@ -77,13 +77,19 @@ export async function requeueTransitorios(
   let devolvidos = 0;
 
   for (const c of candidatos) {
-    const erros = c.validationErrors ?? [];
-    if (erros.length === 0) continue;
+    const todosErros = c.validationErrors ?? [];
+    const tentativas = lerTentativasRequeue(todosErros);
+    if (tentativas >= MAX_TENTATIVAS) continue;
+
+    const errosDeValidacao = todosErros.filter(
+      (e) => !RE_MARCADOR_REQUEUE.test(e.trim()),
+    );
+    if (errosDeValidacao.length === 0) continue;
 
     // TODAS as causas precisam ser transitórias. Se uma única for definitiva,
     // o artigo fica onde está — reprocessar não resolveria aquela.
-    const todasTransitorias = erros.every((e) =>
-      CAUSAS_TRANSITORIAS.some((c) => e.includes(c)),
+    const todasTransitorias = errosDeValidacao.every((e) =>
+      CAUSAS_TRANSITORIAS.some((causa) => e.includes(causa)),
     );
     if (!todasTransitorias) continue;
 
@@ -91,9 +97,10 @@ export async function requeueTransitorios(
       .update(articles)
       .set({
         status: "draft",
-        validationErrors: null,
-        // Incrementa o contador de tentativas.
-        tokensIn: sql`coalesce(${articles.tokensIn}, 0) + 1`,
+        validationErrors: [`requeue:${tentativas + 1}`],
+        // Zera `adaptedAt` para que o item volte imediatamente à fila sem
+        // esperar o cooldown de adiamento.
+        adaptedAt: null,
         updatedAt: agoraSeg,
       })
       .where(eq(articles.id, c.id));

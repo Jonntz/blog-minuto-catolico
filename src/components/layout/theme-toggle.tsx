@@ -1,54 +1,79 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { cn } from "@/lib/utils";
 
 /** Mesma chave lida pelo script anti-FOUC de `src/app/layout.tsx`. */
 const CHAVE_TEMA = "bn-theme";
 
+let temporizadorTransicao: ReturnType<typeof setTimeout> | null = null;
+const ouvintes = new Set<() => void>();
+
+function inscreverTema(ouvinte: () => void): () => void {
+  ouvintes.add(ouvinte);
+  return () => ouvintes.delete(ouvinte);
+}
+
+function lerTemaCliente(): "light" | "dark" {
+  if (typeof document === "undefined") return "light";
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+
+function lerTemaServidor(): "light" | "dark" {
+  return "light";
+}
+
 function aplicar(tema: "light" | "dark") {
   const raiz = document.documentElement;
+  raiz.dataset.themeSwitching = "";
   raiz.dataset.theme = tema;
   raiz.style.colorScheme = tema;
+
+  if (temporizadorTransicao) clearTimeout(temporizadorTransicao);
+  temporizadorTransicao = setTimeout(() => {
+    delete raiz.dataset.themeSwitching;
+    temporizadorTransicao = null;
+  }, 400);
+
   try {
     localStorage.setItem(CHAVE_TEMA, tema);
   } catch {
     // Modo privativo ou storage cheio: o tema vale para esta sessão e pronto.
     // Falhar aqui não pode derrubar a troca visual, que já aconteceu acima.
   }
+
+  for (const ouvinte of ouvintes) ouvinte();
 }
 
 /**
  * Alternador de tema — a pílula de dois botões do design.
  *
- * Sem `useState`, de propósito. O `<html>` já chega do servidor com `data-theme`
- * aplicado pelo script inline do layout, e a variante `dark` do Tailwind
- * (`@custom-variant dark` em globals.css) lê justamente esse atributo. Quem
- * decide a posição do indicador e a cor de cada ícone é o CSS, não o React.
- *
- * Isso elimina o descompasso de hidratação clássico deste componente (servidor
- * renderiza sol, cliente queria lua) e mantém o custo em zero re-render —
- * inclusive para o indicador deslizante, que no design original dependia de
- * `thumbX` no estado.
+ * O `<html>` já chega do servidor com `data-theme` aplicado pelo script inline
+ * do layout, e a variante `dark` do Tailwind (`@custom-variant dark` em
+ * globals.css) lê justamente esse atributo. Quem decide a posição do indicador
+ * e a cor de cada ícone é o CSS, enquanto `useSyncExternalStore` mantém o
+ * `aria-pressed` verdadeiro para leitores de tela.
  */
 export function ThemeToggle({
   variante = "desktop",
 }: {
   variante?: "desktop" | "mobile";
 }) {
+  const temaAtivo = useSyncExternalStore(
+    inscreverTema,
+    lerTemaCliente,
+    lerTemaServidor,
+  );
+
   // No celular o design não mostra a pílula: mostra um único botão quadrado
   // dentro do menu aberto, que alterna.
   if (variante === "mobile") {
     return (
       <button
         type="button"
-        onClick={() =>
-          aplicar(
-            document.documentElement.dataset.theme === "dark"
-              ? "light"
-              : "dark",
-          )
-        }
-        aria-label="Alternar entre tema claro e escuro"
+        onClick={() => aplicar(temaAtivo === "dark" ? "light" : "dark")}
+        aria-label="Alternar para tema escuro"
+        aria-pressed={temaAtivo === "dark"}
         title="Alternar tema"
         className="inline-flex min-h-[46px] w-14 shrink-0 touch-manipulation items-center justify-center rounded-xl border border-line bg-surface-2 text-ink transition-colors duration-200 ease-dc"
       >
@@ -59,9 +84,13 @@ export function ThemeToggle({
   }
 
   return (
-    <div className="relative flex items-center rounded-full border border-line bg-surface-2 p-[3px]">
+    <div
+      role="group"
+      aria-label="Tema de cores"
+      className="relative flex items-center rounded-full border border-line bg-surface-2 p-[3px]"
+    >
       {/* Indicador deslizante. `dark:translate-x-full` reproduz o `thumbX` do
-          design sem estado em React. */}
+          design sem depender da hidratação para pintar a posição certa. */}
       <span
         aria-hidden="true"
         className={cn(
@@ -75,8 +104,9 @@ export function ThemeToggle({
         type="button"
         onClick={() => aplicar("light")}
         aria-label="Tema claro"
+        aria-pressed={temaAtivo === "light"}
         title="Tema claro"
-        className="relative z-10 flex h-6 w-8 touch-manipulation items-center justify-center rounded-full text-ink transition-colors duration-200 ease-dc dark:text-ink-3"
+        className="relative z-10 flex h-7 w-9 touch-manipulation items-center justify-center rounded-full text-ink transition-colors duration-200 ease-dc dark:text-ink-3"
       >
         <IconeSol className="size-[15px]" />
       </button>
@@ -84,8 +114,9 @@ export function ThemeToggle({
         type="button"
         onClick={() => aplicar("dark")}
         aria-label="Tema escuro"
+        aria-pressed={temaAtivo === "dark"}
         title="Tema escuro"
-        className="relative z-10 flex h-6 w-8 touch-manipulation items-center justify-center rounded-full text-ink-3 transition-colors duration-200 ease-dc dark:text-ink"
+        className="relative z-10 flex h-7 w-9 touch-manipulation items-center justify-center rounded-full text-ink-3 transition-colors duration-200 ease-dc dark:text-ink"
       >
         <IconeLua className="size-[15px]" />
       </button>

@@ -69,7 +69,15 @@ export function MobileMenu({ itens }: { itens: readonly ItemDeNavegacao[] }) {
     // condição que fazia o `overflow` do <body> propagar para a viewport. Travar
     // o <body> hoje não trava nada: o fundo continuaria rolando atrás do menu.
     const raiz = document.documentElement;
+    const conteudo = document.getElementById("conteudo");
+    const rodape = document.querySelector("footer");
+
     raiz.style.overflow = "hidden";
+    // `inert` impede que o foco de teclado (`Tab`) e o leitor de tela escapem
+    // para o conteúdo atrás do menu aberto (WCAG 2.1.2 / 2.4.3).
+    conteudo?.setAttribute("inert", "");
+    rodape?.setAttribute("inert", "");
+
     document.addEventListener("keydown", aoTeclar);
     painelRef.current?.querySelector("a")?.focus();
 
@@ -77,6 +85,8 @@ export function MobileMenu({ itens }: { itens: readonly ItemDeNavegacao[] }) {
       // Remove a declaração inline em vez de gravar "" — assim o valor volta a
       // ser o da folha de estilo, não um vazio que a sobrescreve.
       raiz.style.removeProperty("overflow");
+      conteudo?.removeAttribute("inert");
+      rodape?.removeAttribute("inert");
       document.removeEventListener("keydown", aoTeclar);
     };
   }, [aberto]);
@@ -113,7 +123,11 @@ export function MobileMenu({ itens }: { itens: readonly ItemDeNavegacao[] }) {
           disponível e o alternador de tema ao lado. No celular o tema mora
           aqui, não na barra fixa. */}
       <div className="mt-4 flex gap-2.5">
-        <SiteSearch variante="mobile" className="min-w-0 flex-1" />
+        <SiteSearch
+          variante="mobile"
+          aoSubmeter={() => setAberto(false)}
+          className="min-w-0 flex-1"
+        />
         <ThemeToggle variante="mobile" />
       </div>
     </div>
@@ -128,7 +142,7 @@ export function MobileMenu({ itens }: { itens: readonly ItemDeNavegacao[] }) {
         aria-expanded={aberto}
         aria-controls={idPainel}
         aria-label={aberto ? "Fechar menu" : "Abrir menu"}
-        className="inline-flex size-9 touch-manipulation items-center justify-center rounded-full border border-line bg-surface text-ink-2 transition-colors duration-200 ease-dc hover:border-blue-f hover:text-blue-f md:hidden"
+        className="inline-flex size-11 touch-manipulation items-center justify-center rounded-full border border-line bg-surface text-ink-2 transition-colors duration-200 ease-dc hover:border-blue-f hover:text-blue-f md:hidden"
       >
         <svg
           viewBox="0 0 24 24"

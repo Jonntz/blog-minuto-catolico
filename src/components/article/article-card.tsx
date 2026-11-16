@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { Article } from "@/db/schema";
+import type { ArtigoCard } from "@/lib/articles";
 import { dataCurta, dataHoraCurta, isoCompleto } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ArticleMedia } from "@/components/ui/article-media";
@@ -29,7 +29,7 @@ export function ArticleCard({
   nivelDoTitulo = "h3",
   className,
 }: {
-  artigo: Article;
+  artigo: ArtigoCard;
   variante?: VarianteDeCard;
   prioridadeDeImagem?: boolean;
   /**

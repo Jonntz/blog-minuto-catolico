@@ -92,7 +92,7 @@ export const articles = sqliteTable(
     title: text("title"),
     dek: text("dek"),
     bodyMd: text("body_md"),
-    categorySlug: text("category_slug").notNull().default("vaticano"),
+    categorySlug: text("category_slug").notNull().default("mundo"),
     tags: text("tags", { mode: "json" }).$type<string[]>(),
 
     // --- Mídia --------------------------------------------------------------

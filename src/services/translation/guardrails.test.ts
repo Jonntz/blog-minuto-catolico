@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { avaliarGuardRails, type ContextoGuardRails } from "./guardrails";
+import { montarSistemaVerificacao } from "./prompt";
+import { lerTentativasRequeue } from "./requeue";
 
 /**
  * Só a regra `numeros` interessa aqui. O contexto mínimo reprova em outras
@@ -59,5 +61,26 @@ describe("regra numeros", () => {
     const original = "The bishop will visit Brazil next year.";
     const adaptado = "O bispo visitará o Brasil em 2027.";
     assert.equal(errosDeNumeros(original, adaptado).length, 1);
+  });
+});
+
+describe("requeue e prompt de verificação", () => {
+  it("lê marcador requeue:N sem depender de tokens_in", () => {
+    assert.equal(lerTentativasRequeue([]), 0);
+    assert.equal(lerTentativasRequeue(["resposta_invalida: sem blocos"]), 0);
+    assert.equal(
+      lerTentativasRequeue(["resposta_invalida: sem blocos", "requeue:1"]),
+      1,
+    );
+    assert.equal(
+      lerTentativasRequeue(["requeue:2", "checagem factual não foi produzida"]),
+      2,
+    );
+  });
+
+  it("prompt de verificação não pede JSON e linhas ao mesmo tempo", () => {
+    const prompt = montarSistemaVerificacao();
+    assert.equal(prompt.includes("objeto JSON válido"), false);
+    assert.equal(prompt.includes("VEREDITO: CONSISTENTE"), true);
   });
 });

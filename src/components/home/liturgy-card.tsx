@@ -1,4 +1,6 @@
+import Link from "next/link";
 import type { LiturgicalDay } from "@/db/schema";
+import { ROTA_LITURGIA } from "@/lib/seo";
 import { cn } from "@/lib/utils";
 
 /**
@@ -46,7 +48,13 @@ function Linha({ rotulo, valor }: { rotulo: string; valor: string }) {
  * decide a precedência quando duas caem no mesmo dia), a **cor** e o
  * **prefácio**.
  */
-export function LiturgyCard({ dia }: { dia: LiturgicalDay }) {
+export function LiturgyCard({
+  dia,
+  ocultarLinkCalendario = false,
+}: {
+  dia: LiturgicalDay;
+  ocultarLinkCalendario?: boolean;
+}) {
   const classeDaCor = dia.color ? CLASSE_DA_COR[dia.color] : undefined;
 
   return (
@@ -107,6 +115,20 @@ export function LiturgyCard({ dia }: { dia: LiturgicalDay }) {
 
       {dia.note ? (
         <p className="mt-3 text-[12px] leading-relaxed text-ink-3">{dia.note}</p>
+      ) : null}
+
+      {!ocultarLinkCalendario ? (
+        <div className="mt-4 border-t border-line pt-3">
+          <Link
+            href={ROTA_LITURGIA}
+            className="inline-flex items-center text-xs font-medium text-blue-f transition-opacity duration-200 hover:opacity-80"
+          >
+            Ver calendário litúrgico completo
+            <span aria-hidden="true" className="ml-1">
+              →
+            </span>
+          </Link>
+        </div>
       ) : null}
     </section>
   );

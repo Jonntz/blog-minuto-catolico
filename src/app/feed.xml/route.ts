@@ -53,6 +53,10 @@ export async function GET(): Promise<Response> {
     // Auto-referência exigida pelos validadores de RSS; é como um leitor
     // reencontra o feed depois que a página que o anunciava muda.
     `    <atom:link href="${escaparXml(`${base}/feed.xml`)}" rel="self" type="application/rss+xml" />`,
+    // Hub WebSub oficial mantido pelo Google: quando `/api/cron/adapt` publica
+    // matéria nova e avisa este hub, os assinantes (inclusive o Google) são
+    // notificados quase em tempo real.
+    '    <atom:link href="https://pubsubhubbub.appspot.com/" rel="hub" />',
     `    <image>`,
     `      <url>${escaparXml(`${base}/logo.png`)}</url>`,
     `      <title>${escaparXml(NOME_SITE)}</title>`,

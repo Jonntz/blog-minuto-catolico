@@ -24,6 +24,7 @@ export {
   MAX_TENTATIVAS_TAMANHO,
   type EnvAdaptacao,
   type EventoAdaptacao,
+  type ItemPublicado,
   type OpcoesAdaptacao,
   type ResumoAdaptacao,
 } from "./adapt";

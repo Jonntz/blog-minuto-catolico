@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { ArticleBody } from "@/components/article/article-body";
 import { ArticleHeader } from "@/components/article/article-header";
+import { BookRecommendation } from "@/components/article/book-recommendation";
 import { RelatedArticles } from "@/components/article/related-articles";
 import { SourceNote } from "@/components/article/source-note";
 import { ArtigoJsonLd } from "@/components/seo/json-ld";
@@ -75,7 +77,29 @@ async function Materia({ params }: Props) {
         )}
       </div>
 
+      {artigo.tags && artigo.tags.length > 0 ? (
+        <div
+          aria-label="Temas desta matéria"
+          className="mt-8 flex flex-wrap items-center gap-2"
+        >
+          <span className="text-xs tracking-[0.08em] text-ink-3 uppercase">
+            Temas:
+          </span>
+          {artigo.tags.map((tag) => (
+            <Link
+              key={tag}
+              href={`/busca?q=${encodeURIComponent(tag)}`}
+              className="inline-flex min-h-8 items-center rounded-full border border-line bg-surface px-3 text-xs text-ink-2 transition-colors duration-200 ease-dc hover:border-blue-f hover:text-blue-f"
+            >
+              #{tag}
+            </Link>
+          ))}
+        </div>
+      ) : null}
+
       <SourceNote artigo={artigo} />
+
+      <BookRecommendation categoriaSlug={artigo.categorySlug} />
 
       <RelatedArticles artigos={relacionados} />
     </>

@@ -1,7 +1,6 @@
 import Link from "next/link";
-import type { Article } from "@/db/schema";
-import { rotaArtigo } from "@/lib/seo";
-import { tituloArtigo } from "@/lib/seo";
+import type { ArtigoCard } from "@/lib/articles";
+import { rotaArtigo, tituloArtigo } from "@/lib/seo";
 
 /**
  * Bloco numerado da barra lateral — a lista de 4 itens do design.
@@ -17,7 +16,11 @@ import { tituloArtigo } from "@/lib/seo";
  * lista realmente é. Quando houver contagem real, trocar o rótulo e a consulta
  * — a marcação não muda.
  */
-export function WeeklyHighlights({ artigos }: { artigos: readonly Article[] }) {
+export function WeeklyHighlights({
+  artigos,
+}: {
+  artigos: readonly ArtigoCard[];
+}) {
   if (artigos.length === 0) return null;
 
   return (

@@ -50,7 +50,7 @@ async function Resultados({ searchParams }: Props) {
       />
 
       <div className="mt-6 max-w-[420px]">
-        <SiteSearch variante="mobile" />
+        <SiteSearch variante="mobile" valorInicial={termo} />
       </div>
 
       <div className="mt-8">

@@ -5,6 +5,7 @@ import {
   listarArtigosPublicados,
   PAGINAS_INSTITUCIONAIS,
   ROTA_ARQUIVO,
+  ROTA_LITURGIA,
   rotaArtigo,
   rotaCategoria,
   rotaInstitucional,
@@ -75,6 +76,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       url: `${base}${ROTA_ARQUIVO}`,
       lastModified: maisRecente ? new Date(maisRecente * 1000) : new Date(),
       changeFrequency: "hourly",
+      priority: 0.9,
+    },
+    {
+      url: `${base}${ROTA_LITURGIA}`,
+      lastModified: new Date(),
+      changeFrequency: "daily",
       priority: 0.9,
     },
   ];

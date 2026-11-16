@@ -48,7 +48,14 @@ export function SiteHeader() {
           <div className="hidden md:block">
             <ThemeToggle />
           </div>
-          <Suspense fallback={null}>
+          <Suspense
+            fallback={
+              <div
+                aria-hidden="true"
+                className="size-11 rounded-full border border-line bg-surface md:hidden"
+              />
+            }
+          >
             <MenuDeCelular />
           </Suspense>
         </div>

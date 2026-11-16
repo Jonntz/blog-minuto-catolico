@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { cacheLife, cacheTag } from "next/cache";
 import { and, desc, eq, gte, isNotNull } from "drizzle-orm";
 import { getDb, schema } from "@/db";
+import { TAGS } from "@/lib/articles";
 import { getCategoria, getCategoriaOuPadrao } from "@/lib/categories";
 import { getSiteUrlSync } from "@/lib/env";
 import { PENDENTE, REDES_SOCIAIS } from "@/lib/institucional";
@@ -78,6 +80,8 @@ export function rotaCategoria(slug: string): string {
 
 export const ROTA_HOME = "/";
 export const ROTA_ARQUIVO = "/noticias";
+export const ROTA_LITURGIA = "/liturgia";
+export const ROTA_SALVOS = "/salvos";
 
 /**
  * URL do arquivo, omitindo o que é padrão.
@@ -153,6 +157,7 @@ export interface ArtigoSeo {
   /** Título adaptado em PT-BR. Cai para `sourceTitle` enquanto for `null`. */
   title: string | null;
   dek: string | null;
+  bodyMd?: string | null;
   sourceTitle: string;
   sourceExcerpt: string | null;
   /** Nome da fonte, exibido como "Fonte: X". */
@@ -322,13 +327,17 @@ export async function metadataArquivo({
     : `Arquivo completo do ${NOME_SITE}: todas as matérias publicadas, da mais recente para a mais antiga.`;
 
   const url = `${base}${rotaArquivo({ categoria, pagina })}`;
+  // Página 1 de uma editoria no arquivo aponta a canônica para `/categoria/<slug>`
+  // para não criar duas landing pages competindo pelo mesmo conjunto de matérias.
+  const canonica =
+    categoria && pagina === 1 ? `${base}${rotaCategoria(categoria)}` : url;
   const og = await ogPadrao();
 
   return {
     metadataBase: new URL(base),
     title: comPagina,
     description: truncar(descricao, MAX_DESCRICAO),
-    alternates: { canonical: url },
+    alternates: { canonical: canonica },
     openGraph: {
       type: "website",
       url,
@@ -564,6 +573,10 @@ export async function jsonLdNewsArticle(artigo: ArtigoSeo): Promise<JsonLd> {
     citacao["author"] = { "@type": "Person", name: artigo.sourceAuthor };
   }
 
+  const palavras = artigo.bodyMd
+    ? artigo.bodyMd.trim().split(/\s+/).filter(Boolean).length
+    : undefined;
+
   return {
     "@context": "https://schema.org",
     "@type": "NewsArticle",
@@ -574,16 +587,18 @@ export async function jsonLdNewsArticle(artigo: ArtigoSeo): Promise<JsonLd> {
     headline: truncar(titulo, MAX_HEADLINE),
     description: descricaoArtigo(artigo),
     image: [imagem],
+    thumbnailUrl: imagem,
     datePublished: paraIso(artigo.publishedAt),
     dateModified: paraIso(artigo.updatedAt),
     inLanguage: "pt-BR",
     isAccessibleForFree: true,
     articleSection: categoria.label,
+    ...(palavras && palavras > 0 ? { wordCount: palavras } : {}),
     keywords: artigo.tags?.length ? artigo.tags.join(", ") : undefined,
     author: {
       "@type": "Organization",
       name: `Redação ${NOME_SITE}`,
-      url: base,
+      url: `${base}/sobre`,
     },
     publisher: await entidadePublisher(),
     // --- Atribuição (CLAUDE.md §6) ---
@@ -658,6 +673,15 @@ export async function jsonLdTrilhaArtigo(artigo: ArtigoSeo): Promise<JsonLd> {
   ]);
 }
 
+/** Trilha de uma página de categoria: Início › Categoria. */
+export async function jsonLdTrilhaCategoria(slug: string): Promise<JsonLd> {
+  const categoria = getCategoriaOuPadrao(slug);
+  return jsonLdTrilha([
+    { nome: "Início", caminho: ROTA_HOME },
+    { nome: categoria.label, caminho: rotaCategoria(categoria.slug) },
+  ]);
+}
+
 // ---------------------------------------------------------------------------
 // Leituras para sitemap / feed / news-sitemap
 // ---------------------------------------------------------------------------
@@ -712,6 +736,10 @@ const COLUNAS_INDEXAVEIS = {
 export async function listarArtigosPublicados(
   limite: number,
 ): Promise<ArtigoIndexavel[]> {
+  "use cache";
+  cacheLife("homeFeed");
+  cacheTag(TAGS.feedHome);
+
   const db = await getDb();
   return db
     .select(COLUNAS_INDEXAVEIS)
@@ -731,6 +759,10 @@ export async function listarArtigosDesde(
   desdeUnix: number,
   limite: number,
 ): Promise<ArtigoIndexavel[]> {
+  "use cache";
+  cacheLife("homeFeed");
+  cacheTag(TAGS.feedHome);
+
   const db = await getDb();
   return db
     .select(COLUNAS_INDEXAVEIS)

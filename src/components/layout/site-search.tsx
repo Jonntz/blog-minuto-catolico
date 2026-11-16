@@ -10,18 +10,30 @@ import { cn } from "@/lib/utils";
  */
 export function SiteSearch({
   variante = "desktop",
+  valorInicial,
+  aoSubmeter,
   className,
 }: {
   variante?: "desktop" | "mobile";
+  valorInicial?: string;
+  aoSubmeter?: () => void;
   className?: string;
 }) {
   const desktop = variante === "desktop";
 
   return (
-    <form action="/busca" method="get" role="search" className={className}>
+    <form
+      action="/busca"
+      method="get"
+      role="search"
+      onSubmit={aoSubmeter}
+      className={className}
+    >
       <input
         type="search"
         name="q"
+        defaultValue={valorInicial}
+        minLength={2}
         placeholder="Buscar"
         aria-label="Buscar notícias"
         className={cn(

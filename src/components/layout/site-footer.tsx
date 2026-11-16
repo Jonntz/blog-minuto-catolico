@@ -5,6 +5,8 @@ import { Container } from "@/components/ui/container";
 import {
   PAGINAS_INSTITUCIONAIS,
   ROTA_ARQUIVO,
+  ROTA_LITURGIA,
+  ROTA_SALVOS,
   rotaInstitucional,
 } from "@/lib/seo";
 import { itensDoRodape } from "./nav";
@@ -55,6 +57,16 @@ export function SiteFooter() {
                 <li>
                   <LinkDoRodape href={ROTA_ARQUIVO}>
                     Todas as notícias
+                  </LinkDoRodape>
+                </li>
+                <li>
+                  <LinkDoRodape href={ROTA_LITURGIA}>
+                    Liturgia de 1962
+                  </LinkDoRodape>
+                </li>
+                <li>
+                  <LinkDoRodape href={ROTA_SALVOS}>
+                    Matérias salvas
                   </LinkDoRodape>
                 </li>
                 {PAGINAS_INSTITUCIONAIS.map((pagina) => (

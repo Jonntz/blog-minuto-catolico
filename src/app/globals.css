@@ -220,15 +220,13 @@ textarea {
   }
 }
 
-/* A transição global de cor do design (`body *`) é o que faz a troca de tema
-   parecer suave. Mantida, mas restrita às propriedades de cor — aplicar em
-   `all` causaria repaints caros e prejudicaria o INP.
-
-   Em `@layer base` para que um `transition-colors duration-200` de componente
-   ganhe dela. Fora de camada, esta regra sobrescrevia todas as durações
-   declaradas no projeto. */
+/* A transição global de cor da troca de tema só entra em ação durante a troca
+   (`data-theme-switching` no `<html>` por 400ms). Mantê-la em `body *` o tempo
+   todo obrigava o navegador a rastrear 3 transições em cada nó do DOM durante
+   o carregamento e a rolagem. */
 @layer base {
-  body * {
+  html[data-theme-switching],
+  html[data-theme-switching] * {
     transition:
       background-color 0.35s ease,
       color 0.35s ease,

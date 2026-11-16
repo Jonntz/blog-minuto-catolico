@@ -78,10 +78,10 @@ export function ArticleHeader({ artigo }: { artigo: Article }) {
         <ArticleMedia
           src={artigo.imageUrl}
           alt={artigo.imageCaption ?? titulo}
-          width={1240}
-          height={698}
+          width={760}
+          height={428}
           priority
-          sizes="(min-width: 1280px) 1160px, 100vw"
+          sizes="(min-width: 840px) 760px, calc(100vw - 32px)"
           className="aspect-[16/9] rounded-[18px]"
         />
         {artigo.imageCaption || artigo.imageCredit ? (

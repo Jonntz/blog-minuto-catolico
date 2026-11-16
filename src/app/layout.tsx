@@ -49,6 +49,22 @@ export const metadata: Metadata = {
   },
   description:
     "Notícias, documentos e vida da Igreja — com clareza e sem ruído.",
+  /**
+   * `max-image-preview: large` é requisito explícito do Google para exibir
+   * cards grandes no Google Discover e no Google News mobile. Páginas que não
+   * devem ser indexadas (`/busca`, `404`) sobrescrevem `robots` localmente.
+   */
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
 };
 
 export const viewport: Viewport = {
