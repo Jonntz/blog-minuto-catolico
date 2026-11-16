@@ -6,6 +6,7 @@ import {
   escaparXml,
   getSiteUrl,
   listarArtigosDesde,
+  listarArtigosPublicados,
   paraIso,
   rotaArtigo,
   tituloArtigo,
@@ -51,20 +52,36 @@ export async function GET(): Promise<Response> {
   // Pelo XSD oficial do Sitemaps (sitemap.xsd), `<urlset>` exige `minOccurs="1"`
   // para `<url>`. Quando não há artigos nas últimas 48h, um `<urlset>` vazio é
   // rejeitado pelo Google Search Console ("Tag XML ausente: url na linha 4").
-  // Nessa janela silenciosa, emitimos a URL do arquivo de notícias (`/noticias`)
-  // sem bloco `<news:news>`, mantendo o XML 100% válido sem violar a regra de 48h.
-  const corpo =
-    artigos.length > 0
-      ? artigos.map((a) => entrada(a, base)).join("\n")
-      : entradaFallback(base, agoraArredondado);
+  // Nessa janela silenciosa, listamos os 10 artigos mais recentes como `<url>`
+  // padrão (sem `<news:news>`, para respeitar a janela de 48h do Google News).
+  let corpo: string;
+  if (artigos.length > 0) {
+    corpo = artigos.map((a) => entrada(a, base)).join("\n");
+  } else {
+    const recentes = await listarArtigosPublicados(10);
+    corpo =
+      recentes.length > 0
+        ? recentes
+            .map((a) =>
+              entradaUrlSimples(
+                `${base}${rotaArtigo(a.slug)}`,
+                Math.max(a.publishedAt, a.updatedAt),
+              ),
+            )
+            .join("\n")
+        : entradaUrlSimples(`${base}${ROTA_ARQUIVO}`, agoraArredondado);
+  }
   const xml = `${CABECALHO}\n${corpo}\n</urlset>\n`;
 
   return new Response(xml, {
     headers: {
       "content-type": "application/xml; charset=utf-8",
-      // Curto de propósito: a janela de 48h se move a cada minuto, e um
-      // sitemap de notícias servido de cache velho anuncia matéria expirada.
-      "cache-control": "public, max-age=300, s-maxage=300",
+      // Só faz cache público quando há artigos na janela de 48h; em janela vazia
+      // evita prender resposta sem `<news:news>` no cache da borda.
+      "cache-control":
+        artigos.length > 0
+          ? "public, max-age=300, s-maxage=300"
+          : "no-store, max-age=0",
       "x-robots-tag": "noindex",
     },
   });
@@ -92,10 +109,10 @@ function entrada(artigo: ArtigoIndexavel, base: string): string {
   ].join("\n");
 }
 
-function entradaFallback(base: string, unixSegundos: number): string {
+function entradaUrlSimples(url: string, unixSegundos: number): string {
   return [
     "  <url>",
-    `    <loc>${escaparXml(`${base}${ROTA_ARQUIVO}`)}</loc>`,
+    `    <loc>${escaparXml(url)}</loc>`,
     `    <lastmod>${paraIso(unixSegundos)}</lastmod>`,
     "  </url>",
   ].join("\n");
