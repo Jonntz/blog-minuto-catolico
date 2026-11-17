@@ -1,11 +1,12 @@
 import { getCategoriaOuPadrao, type Tom } from "@/lib/categories";
+import { LIMITES, medirIdioma } from "@/services/translation/guardrails";
 
 /**
  * Geração do card visual (1080×1350 JPEG) e da legenda para o feed do Instagram.
  *
- * Tudo aqui é puro e determinístico: nenhuma chamada extra de IA e 0 ms de
- * renderização de imagem no Worker (a composição roda na CDN gratuita do
- * Cloudinary usando as máscaras estáticas em `public/social/`).
+ * Inclui higienização tipográfica PT-BR, prevenção de corte de caracteres nos
+ * selos do Cloudinary, deduplicação de resumo (para o corpo não repetir o dek)
+ * e validação determinística contra vazamentos de HTML/Markdown/inglês.
  */
 
 export interface ArtigoInstagram {
@@ -30,21 +31,55 @@ const COR_POR_TOM: Record<Tom, string> = {
 };
 
 const HASHTAGS_POR_CATEGORIA: Record<string, string> = {
-  vaticano: "#MinutoCatolico #Vaticano #IgrejaCatolica #Papa #NoticiasCatolicas",
-  liturgia: "#MinutoCatolico #Liturgia #MissaTradicional #TradicaoCatolica #IgrejaCatolica",
+  vaticano:
+    "#MinutoCatolico #Vaticano #IgrejaCatolica #Papa #NoticiasCatolicas #fe #catolicismo",
+  liturgia:
+    "#MinutoCatolico #Liturgia #MissaTradicional #TradicaoCatolica #IgrejaCatolica #fsspx #criseNaIgreja #VaticanoSegundo",
   santos: "#MinutoCatolico #Santos #VidaDosSantos #FeCatolica #IgrejaCatolica",
-  opiniao: "#MinutoCatolico #FeCatolica #IgrejaCatolica #FormacaoCatolica",
-  patrimonio: "#MinutoCatolico #PatrimonioCatolico #ArteSacra #IgrejaCatolica",
+  opiniao:
+    "#MinutoCatolico #FeCatolica #IgrejaCatolica #FormacaoCatolica #fsspx #criseNaIgreja #VaticanoSegundo",
+  patrimonio:
+    "#MinutoCatolico #PatrimonioCatolico #ArteSacra #IgrejaCatolica #fe",
   caridade: "#MinutoCatolico #Caridade #DoutrinaSocial #IgrejaCatolica",
   juventude: "#MinutoCatolico #JuventudeCatolica #FeCatolica #IgrejaCatolica",
   missoes: "#MinutoCatolico #Missoes #Evangelizacao #IgrejaCatolica",
   doutrina: "#MinutoCatolico #DoutrinaCatolica #Catecismo #FormacaoCatolica",
   brasil: "#MinutoCatolico #IgrejaNoBrasil #CatolicosBrasil #IgrejaCatolica",
-  mundo: "#MinutoCatolico #IgrejaNoMundo #NoticiasCatolicas #IgrejaCatolica",
+  mundo:
+    "#MinutoCatolico #IgrejaNoMundo #NoticiasCatolicas #IgrejaCatolica #fsspx #criseNaIgreja #VaticanoSegundo",
 };
 
 const MAX_CARACTERES_LEGENDA = 2_200;
-const MAX_CARACTERES_MANCHETE_CARD = 112;
+const MAX_CARACTERES_MANCHETE_CARD = 98;
+const MAX_CARACTERES_TRECHO_LEGENDA = 360;
+
+/**
+ * Espaço não-quebrável (`\u00A0`) usado ao redor do rótulo da editoria para que
+ * o Cloudinary não corte a primeira/última letra com bordas arredondadas.
+ */
+const PADDING_SELO = "\u00A0\u00A0";
+
+const PREPOSICOES_SOLTAS = new Set([
+  "a", "as", "o", "os", "ao", "aos", "à", "às",
+  "de", "da", "das", "do", "dos", "e", "ou",
+  "em", "na", "nas", "no", "nos", "para", "por",
+  "com", "sem", "sob", "sobre", "entre", "após",
+  "contra", "um", "uma", "uns", "umas", "que",
+]);
+
+const ENTIDADES_HTML: Readonly<Record<string, string>> = {
+  amp: "&",
+  nbsp: " ",
+  quot: '"',
+  apos: "'",
+  lt: "<",
+  gt: ">",
+  mdash: "—",
+  ndash: "–",
+  hellip: "…",
+  laquo: '"',
+  raquo: '"',
+};
 
 export function toBase64Url(texto: string): string {
   const bytes = new TextEncoder().encode(texto);
@@ -75,27 +110,123 @@ export function escaparTextoCloudinary(texto: string): string {
     .replace(/%2F/g, "%252F");
 }
 
-function truncarEmPalavra(texto: string, maximo: number): string {
-  const limpo = texto.replace(/\s+/g, " ").trim();
-  if (limpo.length <= maximo) return limpo;
-  const corte = limpo.slice(0, maximo - 1);
-  const ultimoEspaco = corte.lastIndexOf(" ");
-  const base = ultimoEspaco > maximo * 0.55 ? corte.slice(0, ultimoEspaco) : corte;
-  return `${base.trimEnd()}…`;
+function decodificarEntidades(texto: string): string {
+  return texto.replace(
+    /&(#x?[0-9a-f]+|[a-z]+);/gi,
+    (match, codigo: string) => {
+      const lower = codigo.toLowerCase();
+      if (lower in ENTIDADES_HTML) return ENTIDADES_HTML[lower]!;
+      if (lower.startsWith("#x")) {
+        const n = Number.parseInt(lower.slice(2), 16);
+        return Number.isFinite(n) && n > 0 ? String.fromCodePoint(n) : match;
+      }
+      if (lower.startsWith("#")) {
+        const n = Number.parseInt(lower.slice(1), 10);
+        return Number.isFinite(n) && n > 0 ? String.fromCodePoint(n) : match;
+      }
+      return match;
+    },
+  );
 }
 
-function limparMarkdown(md: string): string {
-  return md
+/**
+ * Limpa Markdown, entidades HTML, caracteres invisíveis e falhas comuns de
+ * espaçamento e pontuação em português.
+ */
+export function higienizarTextoEditorial(bruto: string): string {
+  let texto = decodificarEntidades(bruto)
+    .replace(/[\u200B-\u200D\uFEFF\uFFFD]/g, "")
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/[*_`~]/g, "")
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/^>\s*/gm, "")
     .replace(/^[-*+]\s+/gm, "")
-    .replace(/\s+/g, " ")
-    .trim();
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'");
+
+  // Colapsa quebras e espaços múltiplos mantendo espaços regulares.
+  texto = texto.replace(/\s+/g, " ").trim();
+
+  // Corrige espaço indevido antes de pontuação (ex.: "Roma , ontem" -> "Roma, ontem").
+  texto = texto.replace(/\s+([,.;:!?])/g, "$1");
+
+  // Garante espaço após pontuação quando colada em letra (preserva decimais como 1,5).
+  texto = texto.replace(/([,;!?])([\p{L}])/gu, "$1 $2");
+
+  // Garante primeira letra maiúscula quando iniciar por minúscula (respeita aspas iniciais).
+  texto = texto.replace(
+    /^(["']?\s*)(\p{Ll})/u,
+    (_, prefixo: string, letra: string) => `${prefixo}${letra.toUpperCase()}`,
+  );
+
+  return texto.trim();
 }
 
-function extrairPrimeiroParagrafo(bodyMd: string | null): string {
+/**
+ * Corta uma manchete respeitando palavras inteiras e removendo conectivos/artigos
+ * soltos no fim (evita cards como "Bispo comenta sobre a…").
+ */
+export function truncarMancheteCard(texto: string, maximo = MAX_CARACTERES_MANCHETE_CARD): string {
+  const limpo = higienizarTextoEditorial(texto).replace(/\.+$/g, "").trim();
+  if (limpo.length <= maximo) return limpo;
+
+  const corte = limpo.slice(0, maximo - 1);
+  const ultimoEspaco = corte.lastIndexOf(" ");
+  let base = (ultimoEspaco > maximo * 0.5 ? corte.slice(0, ultimoEspaco) : corte)
+    .replace(/[,;:\-–—]+$/g, "")
+    .trim();
+
+  // Remove conectivos soltos no fim do corte até sobrar substantivo/verbo forte.
+  const palavras = base.split(" ");
+  while (palavras.length > 3) {
+    const ultima = palavras[palavras.length - 1]!.toLowerCase();
+    if (!PREPOSICOES_SOLTAS.has(ultima)) break;
+    palavras.pop();
+  }
+  base = palavras.join(" ").replace(/[,;:\-–—]+$/g, "").trim();
+
+  return `${base}…`;
+}
+
+function truncarPorFraseCompleta(texto: string, maximo: number): string {
+  const limpo = higienizarTextoEditorial(texto);
+  if (limpo.length <= maximo) return limpo;
+
+  const janela = limpo.slice(0, maximo);
+  const frases = [...janela.matchAll(/[.!?]["']?(?=\s|$)/g)];
+  const ultimaFrase = frases[frases.length - 1];
+  if (ultimaFrase && ultimaFrase.index !== undefined && ultimaFrase.index >= 90) {
+    return janela.slice(0, ultimaFrase.index + ultimaFrase[0].length).trim();
+  }
+
+  return truncarMancheteCard(limpo, maximo);
+}
+
+function palavrasSignificativas(texto: string): Set<string> {
+  const normalizado = texto
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  return new Set(
+    (normalizado.match(/[a-z]{4,}/g) ?? []),
+  );
+}
+
+function sobreposicaoLexical(a: string, b: string): number {
+  const conjA = palavrasSignificativas(a);
+  const conjB = palavrasSignificativas(b);
+  if (conjA.size === 0 || conjB.size === 0) return 0;
+  let comuns = 0;
+  for (const p of conjA) {
+    if (conjB.has(p)) comuns += 1;
+  }
+  return comuns / Math.min(conjA.size, conjB.size);
+}
+
+function extrairTrechoComplementar(
+  bodyMd: string | null,
+  dek: string,
+): string {
   if (!bodyMd) return "";
   const blocos = bodyMd
     .split(/\n{2,}/)
@@ -104,23 +235,41 @@ function extrairPrimeiroParagrafo(bodyMd: string | null): string {
       (b) =>
         b.length > 0 &&
         !b.startsWith("#") &&
-        !/^>\s*\*?\*?Fonte:/i.test(b),
-    );
-  const primeiro = blocos[0] ? limparMarkdown(blocos[0]) : "";
-  return primeiro.length >= 40 ? truncarEmPalavra(primeiro, 280) : "";
+        !/^>\s*\*?\*?Fontes?:/i.test(b),
+    )
+    .map((b) => higienizarTextoEditorial(b))
+    .filter((b) => b.length >= 45);
+
+  for (const candidato of blocos) {
+    if (dek && sobreposicaoLexical(dek, candidato) >= 0.45) {
+      continue;
+    }
+    return truncarPorFraseCompleta(candidato, MAX_CARACTERES_TRECHO_LEGENDA);
+  }
+
+  return "";
+}
+
+function garantirPontuacaoFinal(texto: string): string {
+  if (!texto) return texto;
+  return /[.!?…"]$/.test(texto) ? texto : `${texto}.`;
 }
 
 /**
- * Monta a legenda para o feed do Instagram com título, breve resumo editorial,
- * atribuição de fonte, chamada para `/bio` e hashtags segmentadas.
+ * Monta a legenda para o feed do Instagram com título limpo, breve resumo sem
+ * repetição redundante, atribuição da fonte, CTA `/bio` e hashtags segmentadas.
  */
 export function montarLegendaInstagram(
   artigo: ArtigoInstagram,
   siteUrl: string,
 ): string {
-  const titulo = (artigo.title ?? artigo.sourceTitle).trim();
-  const dek = artigo.dek?.trim() ?? "";
-  const trechoCorpo = extrairPrimeiroParagrafo(artigo.bodyMd);
+  const titulo = higienizarTextoEditorial(artigo.title ?? artigo.sourceTitle).replace(
+    /\.+$/g,
+    "",
+  );
+  const dekBruto = artigo.dek ? higienizarTextoEditorial(artigo.dek) : "";
+  const dek = dekBruto ? garantirPontuacaoFinal(dekBruto) : "";
+  const trechoCorpo = extrairTrechoComplementar(artigo.bodyMd, dek);
   const dominio = siteUrl.replace(/^https?:\/\//, "").replace(/\/+$/, "");
 
   const partes: string[] = [titulo];
@@ -129,11 +278,8 @@ export function montarLegendaInstagram(
     partes.push(dek);
   }
 
-  if (
-    trechoCorpo &&
-    (!dek || !trechoCorpo.toLowerCase().startsWith(dek.slice(0, 32).toLowerCase()))
-  ) {
-    partes.push(trechoCorpo);
+  if (trechoCorpo) {
+    partes.push(garantirPontuacaoFinal(trechoCorpo));
   }
 
   partes.push(
@@ -145,12 +291,51 @@ export function montarLegendaInstagram(
   const legenda = partes.join("\n\n");
   return legenda.length <= MAX_CARACTERES_LEGENDA
     ? legenda
-    : truncarEmPalavra(legenda, MAX_CARACTERES_LEGENDA);
+    : truncarPorFraseCompleta(legenda, MAX_CARACTERES_LEGENDA);
+}
+
+/**
+ * Valida antes de enviar à Cloudinary/Meta que todos os textos visíveis no card
+ * e na legenda estão em português limpo, sem fragmentos em inglês, tags HTML ou
+ * caracteres corrompidos.
+ */
+export function validarTextosParaInstagram(
+  artigo: ArtigoInstagram,
+  siteUrl: string,
+): { ok: true; legenda: string } | { ok: false; motivo: string } {
+  if (!artigo.title || !artigo.dek) {
+    return { ok: false, motivo: "artigo sem título ou resumo adaptado em PT-BR" };
+  }
+
+  const tituloLimpo = higienizarTextoEditorial(artigo.title);
+  const dekLimpo = higienizarTextoEditorial(artigo.dek);
+
+  if (tituloLimpo.length < 15 || dekLimpo.length < 30) {
+    return { ok: false, motivo: "título ou resumo curto demais após higienização" };
+  }
+
+  const amostra = `${tituloLimpo}. ${dekLimpo}`;
+  if (/https?:\/\/|<\/?[a-z][^>]*>|&[a-z#0-9]+;|\uFFFD/i.test(amostra)) {
+    return { ok: false, motivo: "resíduo de URL, HTML ou codificação quebrada no texto" };
+  }
+
+  const idioma = medirIdioma(amostra);
+  if (idioma.razaoEn > LIMITES.MAX_RAZAO_STOPWORDS_EN) {
+    return {
+      ok: false,
+      motivo: `texto aparenta estar em inglês (razão=${idioma.razaoEn.toFixed(2)})`,
+    };
+  }
+
+  return { ok: true, legenda: montarLegendaInstagram(artigo, siteUrl) };
 }
 
 /**
  * Constrói a URL dinâmica no Cloudinary que gera um card editorial `1080×1350`
  * (proporção 4:5) em JPEG baseline (`fl_progressive:none`) exigido pela Meta.
+ *
+ * O selo da categoria usa `\u00A0\u00A0` + `r_10` para manter margem horizontal
+ * folgada e impedir qualquer corte nas letras iniciais/finais (ex.: "IGREJA").
  */
 export function montarUrlCardInstagram({
   cloudName,
@@ -167,12 +352,12 @@ export function montarUrlCardInstagram({
 
   const categoria = getCategoriaOuPadrao(artigo.categorySlug);
   const cor = COR_POR_TOM[categoria.tom];
-  const labelCategoria = categoria.label.toUpperCase();
+  const labelCategoria = `${PADDING_SELO}${categoria.label.toUpperCase()}${PADDING_SELO}`;
 
-  const tituloBruto = (artigo.title ?? artigo.sourceTitle).trim();
-  const manchete = truncarEmPalavra(tituloBruto, MAX_CARACTERES_MANCHETE_CARD);
+  const tituloBruto = artigo.title ?? artigo.sourceTitle;
+  const manchete = truncarMancheteCard(tituloBruto, MAX_CARACTERES_MANCHETE_CARD);
   const tamanhoFonte =
-    manchete.length <= 58 ? 52 : manchete.length <= 88 ? 46 : 42;
+    manchete.length <= 55 ? 50 : manchete.length <= 80 ? 46 : 42;
 
   const urlFotoBase = artigo.imageUrl?.trim() || fallbackBgUrl;
   const cropBase = artigo.imageUrl?.trim()
@@ -180,8 +365,8 @@ export function montarUrlCardInstagram({
     : "w_1080,h_1350,c_fill";
 
   const camadaOverlay = `l_fetch:${toBase64Url(overlayUrl)}/fl_layer_apply,w_1080,h_1350,g_center`;
-  const camadaSelo = `bo_14px_solid_rgb:${cor},b_rgb:${cor},r_28,co_white,l_text:Montserrat@google_24_700_letter_spacing_2:${escaparTextoCloudinary(labelCategoria)}/fl_layer_apply,g_north_east,x_72,y_62`;
-  const camadaManchete = `w_936,c_fit,co_white,l_text:Montserrat@google_${tamanhoFonte}_700_line_spacing_-4:${escaparTextoCloudinary(manchete)}/fl_layer_apply,g_south_west,x_72,y_182`;
+  const camadaSelo = `bo_10px_solid_rgb:${cor},b_rgb:${cor},r_10,co_white,l_text:Montserrat@google_24_700_letter_spacing_2:${escaparTextoCloudinary(labelCategoria)}/fl_layer_apply,g_north_east,x_72,y_62`;
+  const camadaManchete = `w_900,c_fit,co_white,l_text:Montserrat@google_${tamanhoFonte}_700_line_spacing_4:${escaparTextoCloudinary(manchete)}/fl_layer_apply,g_south_west,x_72,y_182`;
   const formatoSaida = "f_jpg,fl_progressive:none,q_88";
 
   // Evita que `?` ou `#` da URL de origem interfira na rota `/image/fetch/`.

@@ -3,8 +3,8 @@ import type { Db } from "@/db";
 import { articles, socialPosts } from "@/db/schema";
 import { getSiteUrlSync } from "@/lib/env";
 import {
-  montarLegendaInstagram,
   montarUrlCardInstagram,
+  validarTextosParaInstagram,
   type ArtigoInstagram,
 } from "./instagram-card";
 
@@ -178,8 +178,35 @@ export async function executarCicloInstagram(
   }
 
   const siteUrl = getSiteUrlSync();
+  const validacao = validarTextosParaInstagram(artigo, siteUrl);
+  if (!validacao.ok) {
+    const socialPostIdInvalido = crypto.randomUUID();
+    await db
+      .insert(socialPosts)
+      .values({
+        id: socialPostIdInvalido,
+        articleId: artigo.id,
+        network: REDE,
+        status: "failed",
+        caption: (artigo.title ?? artigo.sourceTitle).slice(0, 500),
+        attempts: 1,
+        error: `texto reprovado na validação PT-BR: ${validacao.motivo}`,
+        createdAt: agoraSeg,
+      })
+      .onConflictDoNothing({
+        target: [socialPosts.articleId, socialPosts.network],
+      });
+
+    return {
+      status: "failed",
+      articleId: artigo.id,
+      slug: artigo.slug,
+      erro: validacao.motivo,
+    };
+  }
+
   const cardImageUrl = montarUrlCardInstagram({ cloudName, siteUrl, artigo });
-  const caption = montarLegendaInstagram(artigo, siteUrl);
+  const caption = validacao.legenda;
   const altText = (
     artigo.imageCaption?.trim() ||
     artigo.title ||
@@ -267,6 +294,7 @@ async function selecionarCandidato(
   const condicaoBase = and(
     eq(articles.status, "published"),
     isNotNull(articles.title),
+    isNotNull(articles.dek),
     isNull(socialPosts.id),
   );
 
