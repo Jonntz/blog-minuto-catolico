@@ -5,6 +5,7 @@ import { getDb, schema } from "@/db";
 import { TAGS } from "@/lib/articles";
 import { getCategoria, getCategoriaOuPadrao } from "@/lib/categories";
 import { getSiteUrlSync } from "@/lib/env";
+import { otimizarUrlImagemExterna } from "@/lib/image-loader";
 import { PENDENTE, REDES_SOCIAIS } from "@/lib/institucional";
 
 /**
@@ -450,9 +451,14 @@ interface ImagemOg {
 async function imagemSocial(artigo: ArtigoSeo): Promise<ImagemOg> {
   if (!artigo.imageUrl) return ogPadrao();
   return {
-    url: artigo.imageUrl,
-    // A fonte não publica dimensões no feed. Declarar as do slot padrão evita
-    // que o card do WhatsApp/X recorte de forma imprevisível.
+    // Força JPEG 1200px: Telegram, WhatsApp e X frequentemente ignoram og:image
+    // em WebP ou arquivos pesados (> 2 MB).
+    url: otimizarUrlImagemExterna({
+      src: artigo.imageUrl,
+      width: OG_PADRAO.largura,
+      quality: 80,
+      formato: "f_jpg",
+    }),
     width: OG_PADRAO.largura,
     height: OG_PADRAO.altura,
     alt: artigo.imageCaption?.trim() || tituloArtigo(artigo),

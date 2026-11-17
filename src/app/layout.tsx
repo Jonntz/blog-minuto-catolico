@@ -117,6 +117,11 @@ export default function RootLayout({
          */}
         <link
           rel="preconnect"
+          href="https://cdn1.ewtn.com"
+          crossOrigin="anonymous"
+        />
+        <link
+          rel="preconnect"
           href="https://res.cloudinary.com"
           crossOrigin="anonymous"
         />

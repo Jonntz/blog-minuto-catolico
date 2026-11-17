@@ -1,5 +1,6 @@
 import { connection } from "next/server";
 import { getCategoriaOuPadrao } from "@/lib/categories";
+import { otimizarUrlImagemExterna } from "@/lib/image-loader";
 import {
   DESCRICAO_SITE,
   NOME_SITE,
@@ -98,8 +99,14 @@ function item(artigo: ArtigoIndexavel, base: string): string {
   ];
 
   if (artigo.imageUrl) {
+    const imagemJpeg = otimizarUrlImagemExterna({
+      src: artigo.imageUrl,
+      width: 1200,
+      quality: 80,
+      formato: "f_jpg",
+    });
     linhas.push(
-      `      <enclosure url="${escaparXml(artigo.imageUrl)}" type="image/jpeg" />`,
+      `      <enclosure url="${escaparXml(imagemJpeg)}" type="image/jpeg" />`,
     );
   }
 

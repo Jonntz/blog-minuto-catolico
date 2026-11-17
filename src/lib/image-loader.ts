@@ -1,50 +1,64 @@
 /**
- * Loader customizado do `next/image` (`images.loaderFile` em `next.config.ts`).
+ * Loader customizado do `next/image` (`images.loaderFile` em `next.config.ts`)
+ * e normalizador de URLs sociais (`og:image`).
  *
- * ## Por que não usar `/_next/image` + binding `IMAGES` da Cloudflare
+ * ## Por que não usar `q_auto:eco` nas URLs da EWTN
  *
- * No `@opennextjs/cloudflare`, a rota `/_next/image` chama `env.IMAGES.input()`
- * a cada requisição cuja origem não envie `Cache-Control: immutable` (caso do
- * Cloudinary e do S3). Isso consome as 5.000 transformações mensais do plano
- * Free em poucas centenas de visitas e, ao atingir o teto, a Cloudflare passa
- * a devolver o erro 9422 (HTTP 500) em TODAS as imagens do portal.
- *
- * As duas fontes com foto do portal já possuem CDNs próprias de transformação
- * gratuita e ilimitada:
- *  - **EWTN (Cloudinary):** injeta `f_auto,q_auto:eco,w_<w>,c_limit` após
- *    `/image/upload/` (entrega AVIF no Chrome/Lighthouse e WebP no Safari com
- *    ~40% menos bytes que `q_75` fixo).
- *  - **Diane Montagna (Substack S3):** usa o proxy CDN oficial `substackcdn.com/image/fetch/...`.
- *
- * Além de eliminar o risco de quebra por cota (erro 9422), o navegador baixa a
- * imagem direto da CDN de origem em HTTP/3 (com `<link rel="preconnect">` no
- * `<head>`), sem passar pelo nosso Worker como intermediário.
+ * Em `res.cloudinary.com/ewtn` e `cdn1.ewtn.com` (CNAME da mesma conta), o
+ * parâmetro `q_auto:eco` retorna HTTP 403 (`Your entitlement packages don't
+ * support: Apply advanced quality control to images`), quebrando todas as
+ * imagens. Qualidade numérica (`q_75`, `q_80`) + `f_auto` / `f_jpg` devolve
+ * HTTP 200 com cache na borda.
  */
-export default function carregadorDeImagem({
-  src,
-  width,
-}: {
+
+export interface OpcoesImagemExterna {
   src: string;
   width: number;
   quality?: number;
-}): string {
-  // 1. Cloudinary (EWTN): transforma e converte para AVIF/WebP na própria CDN.
+  formato?: "f_auto" | "f_jpg";
+}
+
+export function otimizarUrlImagemExterna({
+  src,
+  width,
+  quality = 75,
+  formato = "f_auto",
+}: OpcoesImagemExterna): string {
+  // 1. EWTN (`res.cloudinary.com` legado e `cdn1.ewtn.com` atual).
   if (
-    src.includes("res.cloudinary.com/") &&
+    (src.includes("res.cloudinary.com/") || src.includes("cdn1.ewtn.com/")) &&
     src.includes("/image/upload/") &&
-    !src.includes("/image/upload/f_auto")
+    !src.includes("/image/upload/f_") &&
+    !src.includes("/image/upload/w_")
   ) {
     return src.replace(
       "/image/upload/",
-      `/image/upload/f_auto,q_auto:eco,w_${width},c_limit/`,
+      `/image/upload/${formato},q_${quality},w_${width},c_limit/`,
     );
   }
 
   // 2. Substack S3 (Diane Montagna): usa o otimizador oficial do Substack.
   if (src.startsWith("https://substack-post-media.s3.amazonaws.com/")) {
-    return `https://substackcdn.com/image/fetch/w_${width},c_limit,f_auto,q_auto:eco/${encodeURIComponent(src)}`;
+    return `https://substackcdn.com/image/fetch/w_${width},c_limit,${formato},q_auto:good/${encodeURIComponent(src)}`;
   }
 
   // 3. Qualquer outra URL (local ou externa): serve diretamente.
   return src;
+}
+
+export default function carregadorDeImagem({
+  src,
+  width,
+  quality,
+}: {
+  src: string;
+  width: number;
+  quality?: number;
+}): string {
+  return otimizarUrlImagemExterna({
+    src,
+    width,
+    quality: quality ?? 75,
+    formato: "f_auto",
+  });
 }

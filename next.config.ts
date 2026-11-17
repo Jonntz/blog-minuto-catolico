@@ -42,6 +42,7 @@ const nextConfig: NextConfig = {
     // og:image do próprio WordPress. Host novo precisa entrar aqui, senão o
     // next/image recusa em runtime.
     remotePatterns: [
+      { protocol: "https", hostname: "cdn1.ewtn.com" },
       { protocol: "https", hostname: "res.cloudinary.com" },
       { protocol: "https", hostname: "www.ewtnnews.com" },
       // Fotos dos posts de Diane Montagna (Substack). O coletor guarda a
