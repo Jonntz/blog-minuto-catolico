@@ -123,10 +123,17 @@
 		"WORKERS_AI_MODEL": "llama70b",
 		"WORKERS_AI_VERIFY_MODEL": "mistral24b",
 		// Chave pública do IndexNow (espelhada em public/686b94694ba9d30238795853022e7eed.txt).
-		"INDEXNOW_KEY": "686b94694ba9d30238795853022e7eed"
+		"INDEXNOW_KEY": "686b94694ba9d30238795853022e7eed",
+		// Controle anti-spam da automação do Instagram (Caminho 1 + Opção A).
+		// Preencher CLOUDINARY_CLOUD_NAME aqui após criar a conta gratuita no Cloudinary.
+		"INSTAGRAM_MAX_POSTS_DIA": "5",
+		"INSTAGRAM_INTERVALO_MIN_MINUTOS": "180",
+		"CLOUDINARY_CLOUD_NAME": "dxbbp6yw"
 	}
 	// Segredos (NUNCA em vars):
 	//   wrangler secret put CRON_SECRET
-	//   wrangler secret put NVIDIA_API_KEY   <- chave gratuita de build.nvidia.com
+	//   wrangler secret put NVIDIA_API_KEY         <- chave gratuita de build.nvidia.com
+	//   wrangler secret put INSTAGRAM_ACCOUNT_ID   <- ID da conta profissional IG (via Graph Explorer)
+	//   wrangler secret put INSTAGRAM_ACCESS_TOKEN <- System User Token permanente (Meta Business)
 	// Em desenvolvimento, use .dev.vars (git-ignorado).
 }

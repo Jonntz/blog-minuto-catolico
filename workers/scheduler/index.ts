@@ -83,6 +83,20 @@ export default {
       return;
     }
 
+    // Workers Free limita a 3 Cron Triggers por Worker (`wrangler.jsonc`).
+    // Encadeamos `/api/cron/instagram` logo após `/api/cron/adapt` em outra
+    // invocação HTTP isolada, garantindo cota/timeout separados sem criar um
+    // 4º trigger.
+    if (rota === "/api/cron/adapt") {
+      ctx.waitUntil(
+        (async () => {
+          await dispararRota("/api/cron/adapt", event.cron, env);
+          await dispararRota("/api/cron/instagram", event.cron, env);
+        })(),
+      );
+      return;
+    }
+
     ctx.waitUntil(dispararRota(rota, event.cron, env));
   },
 };

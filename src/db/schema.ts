@@ -263,3 +263,57 @@ export const subscribers = sqliteTable(
 
 export type Subscriber = typeof subscribers.$inferSelect;
 export type NovoSubscriber = typeof subscribers.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// social_posts — distribuição automática em redes sociais (Instagram, etc.)
+// ---------------------------------------------------------------------------
+
+export const REDES_SOCIAIS_AUTO = ["instagram"] as const;
+export type RedeSocialAuto = (typeof REDES_SOCIAIS_AUTO)[number];
+
+export const STATUS_SOCIAL = [
+  "pending",
+  "container_created",
+  "published",
+  "failed",
+] as const;
+export type StatusSocial = (typeof STATUS_SOCIAL)[number];
+
+/**
+ * Rastreamento idempotente de publicações sociais por artigo e rede.
+ *
+ * O índice único `(article_id, network)` garante que nenhuma matéria seja
+ * postada duas vezes no mesmo feed, mesmo sob reexecuções de cron, e guarda o
+ * `containerId` intermediário da Meta Graph API caso a etapa 1 (`media`)
+ * conclua antes da etapa 2 (`media_publish`).
+ */
+export const socialPosts = sqliteTable(
+  "social_posts",
+  {
+    id: text("id").primaryKey(),
+    articleId: text("article_id")
+      .notNull()
+      .references(() => articles.id, { onDelete: "cascade" }),
+    network: text("network").$type<RedeSocialAuto>().notNull(),
+    status: text("status").$type<StatusSocial>().notNull().default("pending"),
+    containerId: text("container_id"),
+    remotePostId: text("remote_post_id"),
+    cardImageUrl: text("card_image_url"),
+    caption: text("caption").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    error: text("error"),
+    createdAt: integer("created_at").notNull(),
+    publishedAt: integer("published_at"),
+  },
+  (t) => [
+    uniqueIndex("social_posts_article_network_idx").on(t.articleId, t.network),
+    index("social_posts_status_created_idx").on(
+      t.network,
+      t.status,
+      t.createdAt,
+    ),
+  ],
+);
+
+export type SocialPost = typeof socialPosts.$inferSelect;
+export type NovoSocialPost = typeof socialPosts.$inferInsert;

@@ -82,6 +82,7 @@ export const ROTA_HOME = "/";
 export const ROTA_ARQUIVO = "/noticias";
 export const ROTA_LITURGIA = "/liturgia";
 export const ROTA_SALVOS = "/salvos";
+export const ROTA_BIO = "/bio";
 
 /**
  * URL do arquivo, omitindo o que é padrão.

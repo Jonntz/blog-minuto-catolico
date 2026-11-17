@@ -15,6 +15,13 @@
       "when": 1785196732454,
       "tag": "0001_bored_blue_marvel",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794871521996,
+      "tag": "0002_material_sunfire",
+      "breakpoints": true
     }
   ]
 }
