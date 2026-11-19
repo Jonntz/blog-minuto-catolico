@@ -110,7 +110,7 @@ describe("instagram-card — geração de card Cloudinary e legenda", () => {
     assert.ok(legenda.includes("Para os produtores, voltar ao encontro presencial"));
     assert.ok(!legenda.includes("Estados Unidos."));
     assert.ok(legenda.includes("Fonte original: EWTN News"));
-    assert.ok(legenda.includes("Comente LER ou LINK"));
+    assert.ok(legenda.includes("Leia a matéria completa no link da bio"));
     assert.ok(legenda.includes("minutocatolico.com.br/bio"));
     assert.ok(legenda.length <= 2_200);
   });

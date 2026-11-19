@@ -425,7 +425,7 @@ export function montarLegendaInstagram(
 
   partes.push(
     `Fonte original: ${artigo.sourceName}`,
-    `Comente LER ou LINK para receber a matéria no Direct, ou acesse pelo link da bio (${dominio}/bio).`,
+    `Leia a matéria completa no link da bio (${dominio}/bio) ou acesse ${dominio}.`,
     montarHashtagsInstagram(artigo),
   );
 
