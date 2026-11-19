@@ -462,9 +462,12 @@ async function resolverTokenDaPagina(
           signal: AbortSignal.timeout(TIMEOUT_META_MS),
         },
       );
-      if (!resp.ok) return null;
-      const dados = (await resp.json()) as { access_token?: string };
-      return dados.access_token ? { pageId, pageToken: dados.access_token } : null;
+      if (resp.ok) {
+        const dados = (await resp.json()) as { access_token?: string };
+        if (dados.access_token) {
+          return { pageId, pageToken: dados.access_token };
+        }
+      }
     }
 
     const resp = await fetch(
