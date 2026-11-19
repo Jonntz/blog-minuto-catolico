@@ -17,7 +17,7 @@
  */
 
 /** Data da última revisão das páginas institucionais (exibida ao leitor). */
-export const ATUALIZADO_EM = "4 de agosto de 2026";
+export const ATUALIZADO_EM = "19 de novembro de 2026";
 
 /**
  * ✅ PREENCHIDO EM 04/08/2026. O nome `PENDENTE` ficou por compatibilidade com
@@ -134,6 +134,18 @@ export const TRATAMENTOS = [
     nome: "NVIDIA NIM",
     papel:
       "Adaptação dos textos das matérias para português. Recebe apenas o conteúdo publicado pelas fontes — nunca endereço IP, e-mail ou qualquer dado de quem visita o site.",
+    local: "Servidores fora do Brasil.",
+  },
+  {
+    nome: "Cloudinary",
+    papel:
+      "Renderização sob demanda das imagens e cards editoriais exibidos no portal e nas redes sociais oficiais. Não recebe dados de quem lê no site nem instala cookies no seu navegador.",
+    local: "Servidores fora do Brasil.",
+  },
+  {
+    nome: "Meta Platforms (Instagram Graph API)",
+    papel:
+      "Publicação automatizada das matérias do portal no perfil oficial @ominutocatolico e envio pontual de links solicitados em comentários ou mensagens diretas no Instagram, sem armazenamento de perfil ou histórico de conversas no banco do site.",
     local: "Servidores fora do Brasil.",
   },
 ] as const;

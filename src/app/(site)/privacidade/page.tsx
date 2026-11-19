@@ -29,8 +29,10 @@ export default function PrivacidadePage() {
       <h2>Resumo</h2>
       <p>
         O Minuto Católico é um site de leitura. Não há cadastro e não há login.
-        Os únicos dados pessoais que o site recebe de forma deliberada são o
-        e-mail de quem se inscreve na newsletter.
+        Os únicos dados pessoais que o site recebe diretamente são o e-mail de
+        quem se inscreve na newsletter; no perfil oficial do Instagram, o
+        atendimento automático lê apenas palavras-chave enviadas por quem pede
+        um link, sem gravar perfis ou mensagens em banco de dados.
       </p>
       <p>
         O site <strong>não exibe publicidade</strong>: nenhum script de rede de
@@ -87,6 +89,24 @@ export default function PrivacidadePage() {
         identifica você e não serve para publicidade. É necessário para a
         segurança do site, com base no <strong>legítimo interesse</strong>{" "}
         (LGPD, art. 7º, IX).
+      </p>
+
+      <h3>1.4 Interações no perfil oficial do Instagram (@ominutocatolico)</h3>
+      <p>
+        Quando você comenta uma palavra-chave de leitura (como{" "}
+        <code>LER</code> ou <code>LINK</code>) em uma publicação do{" "}
+        <code>@ominutocatolico</code> ou responde a um Story solicitando o
+        link da notícia, nosso servidor recebe a notificação oficial da Meta
+        (contendo o identificador técnico do comentário ou da mensagem e o texto
+        enviado) exclusivamente para responder na hora com o endereço da
+        matéria solicitada.
+      </p>
+      <p>
+        <strong>Não gravamos</strong> nomes de usuário, identificadores do
+        Instagram, textos de comentários nem histórico de mensagens diretas no
+        banco de dados do Minuto Católico: os metadados recebidos pelo webhook
+        são processados apenas em memória durante o envio da resposta e
+        descartados em seguida.
       </p>
 
       <h2>2. Com quem os dados são compartilhados</h2>
@@ -211,7 +231,40 @@ export default function PrivacidadePage() {
         </AvisoPendente>
       )}
 
-      <h2>10. Mudanças nesta política</h2>
+      <h2 id="exclusao-de-dados">
+        10. Exclusão de dados (Newsletter e integração Meta / Instagram)
+      </h2>
+      <p>
+        Para pedir a exclusão definitiva do seu e-mail da newsletter ou qualquer
+        informação tratada em nossas integrações com a Meta Platforms (Instagram):
+      </p>
+      <ol>
+        <li>
+          Para remover interações vinculadas a aplicativos da sua conta do
+          Facebook ou Instagram, acesse as configurações da plataforma em{" "}
+          <em>Configurações e privacidade → Apps e sites</em> e remova o acesso
+          do aplicativo <strong>Minuto Católico</strong>.
+        </li>
+        <li>
+          Como nosso servidor não armazena perfis, identificadores (IGSID) nem
+          histórico de mensagens diretas ou comentários do Instagram no banco de
+          dados, nenhuma cópia desses dados permanece retida conosco após a
+          resposta automática.
+        </li>
+        <li>
+          Caso deseje confirmação formal ou exclusão do cadastro da newsletter,
+          envie um e-mail para{" "}
+          {PENDENTE.email ? (
+            <a href={`mailto:${PENDENTE.email}`}>{PENDENTE.email}</a>
+          ) : (
+            <Link href="/contato">nosso canal de contato</Link>
+          )}{" "}
+          com o assunto <strong>&ldquo;Exclusão de dados&rdquo;</strong>; a
+          solicitação é atendida em até 15 dias.
+        </li>
+      </ol>
+
+      <h2>11. Mudanças nesta política</h2>
       <p>
         Alterações são publicadas nesta página, com a data de revisão atualizada
         no topo. Mudança que amplie o tratamento de dados pessoais será
