@@ -448,55 +448,128 @@ async function enviarDmComBotaoOuTexto(params: {
   });
 }
 
+async function resolverTokenDaPagina(
+  accountId: string,
+  pageId: string | undefined,
+  systemToken: string,
+): Promise<{ pageId: string; pageToken: string } | null> {
+  try {
+    if (pageId) {
+      const resp = await fetch(
+        `${GRAPH_API_BASE}/${encodeURIComponent(pageId)}?fields=access_token`,
+        {
+          headers: { authorization: `Bearer ${systemToken}` },
+          signal: AbortSignal.timeout(TIMEOUT_META_MS),
+        },
+      );
+      if (!resp.ok) return null;
+      const dados = (await resp.json()) as { access_token?: string };
+      return dados.access_token ? { pageId, pageToken: dados.access_token } : null;
+    }
+
+    const resp = await fetch(
+      `${GRAPH_API_BASE}/me/accounts?fields=id,access_token,instagram_business_account{id}`,
+      {
+        headers: { authorization: `Bearer ${systemToken}` },
+        signal: AbortSignal.timeout(TIMEOUT_META_MS),
+      },
+    );
+    if (!resp.ok) return null;
+    const dados = (await resp.json()) as {
+      data?: Array<{
+        id?: string;
+        access_token?: string;
+        instagram_business_account?: { id?: string };
+      }>;
+    };
+    const match =
+      dados.data?.find((p) => p.instagram_business_account?.id === accountId) ??
+      dados.data?.[0];
+    return match?.id && match.access_token
+      ? { pageId: match.id, pageToken: match.access_token }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function dispararPostMensagemMeta(
+  alvoId: string,
+  token: string,
+  payload: Record<string, unknown>,
+): Promise<
+  | { ok: true }
+  | { ok: false; erro: string; status?: number; code?: number }
+> {
+  try {
+    const resposta = await fetch(
+      `${GRAPH_API_BASE}/${encodeURIComponent(alvoId)}/messages`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(TIMEOUT_META_MS),
+      },
+    );
+
+    if (resposta.ok) {
+      return { ok: true };
+    }
+
+    const dados = (await resposta.json().catch(() => ({}))) as {
+      error?: { message?: string; code?: number; error_subcode?: number };
+    };
+    const err = dados.error;
+    const erro = err
+      ? `Meta HTTP ${resposta.status} (${err.code ?? "?"}${err.error_subcode ? `/${err.error_subcode}` : ""}): ${err.message ?? "erro"}`
+      : `Meta HTTP ${resposta.status}`;
+    return { ok: false, erro, status: resposta.status, code: err?.code };
+  } catch (erro) {
+    return {
+      ok: false,
+      erro: erro instanceof Error ? erro.message : String(erro),
+    };
+  }
+}
+
 async function enviarMensagemMeta(params: {
   accountId: string;
   pageId?: string;
   accessToken: string;
   payload: Record<string, unknown>;
 }): Promise<{ ok: true } | { ok: false; erro: string }> {
-  const alvos = [params.accountId];
-  if (params.pageId && params.pageId !== params.accountId) {
-    alvos.push(params.pageId);
-  }
+  const primeira = await dispararPostMensagemMeta(
+    params.accountId,
+    params.accessToken,
+    params.payload,
+  );
+  if (primeira.ok) return { ok: true };
 
-  let ultimoErro = "Falha desconhecida ao enviar mensagem na Meta";
+  // Se a Meta exigir Page Access Token (#210) ou nó da Página, resolve o
+  // token da Página vinculada automaticamente via `/me/accounts` ou `{pageId}`.
+  const precisaTokenPagina =
+    primeira.code === 210 ||
+    /page access token|unsupported post request/i.test(primeira.erro);
 
-  for (const alvo of alvos) {
-    try {
-      const resposta = await fetch(
-        `${GRAPH_API_BASE}/${encodeURIComponent(alvo)}/messages`,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Bearer ${params.accessToken}`,
-          },
-          body: JSON.stringify(params.payload),
-          signal: AbortSignal.timeout(TIMEOUT_META_MS),
-        },
+  if (precisaTokenPagina) {
+    const pagina = await resolverTokenDaPagina(
+      params.accountId,
+      params.pageId,
+      params.accessToken,
+    );
+    if (pagina) {
+      const segunda = await dispararPostMensagemMeta(
+        pagina.pageId,
+        pagina.pageToken,
+        params.payload,
       );
-
-      if (resposta.ok) {
-        return { ok: true };
-      }
-
-      const dados = (await resposta.json().catch(() => ({}))) as {
-        error?: { message?: string; code?: number; error_subcode?: number };
-      };
-      const err = dados.error;
-      ultimoErro = err
-        ? `Meta HTTP ${resposta.status} (${err.code ?? "?"}${err.error_subcode ? `/${err.error_subcode}` : ""}): ${err.message ?? "erro"}`
-        : `Meta HTTP ${resposta.status}`;
-
-      // Só tenta `pageId` se o nó `{accountId}` tiver sido rejeitado pela rota.
-      if (resposta.status >= 500 || err?.code === 190 || err?.code === 200) {
-        break;
-      }
-    } catch (erro) {
-      ultimoErro = erro instanceof Error ? erro.message : String(erro);
-      break;
+      if (segunda.ok) return { ok: true };
+      return { ok: false, erro: segunda.erro };
     }
   }
 
-  return { ok: false, erro: ultimoErro };
+  return { ok: false, erro: primeira.erro };
 }

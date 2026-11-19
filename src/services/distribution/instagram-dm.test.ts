@@ -210,4 +210,87 @@ describe("instagram-dm — webhook oficial de link clicável no Direct", () => {
       globalThis.fetch = fetchOriginal;
     }
   });
+
+  it("resolve Page Access Token via /me/accounts automaticamente quando /messages retorna erro 210", async () => {
+    const fetchOriginal = globalThis.fetch;
+    const requisicoes: Array<{ url: string; auth: string | null }> = [];
+
+    globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      const headers = new Headers(init?.headers);
+      requisicoes.push({ url, auth: headers.get("authorization") });
+
+      if (url.includes("/17841471326224544/messages")) {
+        return new Response(
+          JSON.stringify({
+            error: {
+              message: "(#210) A page access token is required to request this resource.",
+              code: 210,
+            },
+          }),
+          { status: 400, headers: { "content-type": "application/json" } },
+        );
+      }
+
+      if (url.includes("/me/accounts")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "1487592844432960",
+                access_token: "page-token-resolvido",
+                instagram_business_account: { id: "17841471326224544" },
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+
+      return new Response(JSON.stringify({ message_id: "mid-page" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    try {
+      const res = await processarWebhookInstagram(
+        criarDbMock({
+          slug: "materia-teste",
+          title: "Notícia Teste",
+          dek: null,
+          imageUrl: null,
+        }),
+        {
+          INSTAGRAM_ACCOUNT_ID: "17841471326224544",
+          INSTAGRAM_ACCESS_TOKEN: "system-token-inicial",
+        },
+        {
+          object: "instagram",
+          entry: [
+            {
+              changes: [
+                {
+                  field: "comments",
+                  value: {
+                    id: "comment-210",
+                    text: "LINK",
+                    from: { id: "user-9" },
+                    media: { id: "media-9" },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      );
+
+      assert.equal(res.respondidos, 1);
+      assert.equal(requisicoes.length, 3);
+      assert.ok(requisicoes[2]!.url.includes("/1487592844432960/messages"));
+      assert.equal(requisicoes[2]!.auth, "Bearer page-token-resolvido");
+    } finally {
+      globalThis.fetch = fetchOriginal;
+    }
+  });
 });
