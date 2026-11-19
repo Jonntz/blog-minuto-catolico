@@ -99,7 +99,10 @@ export const esquemaEnv = z.object({
    * renderização do site) caso o Instagram ainda não esteja configurado.
    */
   INSTAGRAM_ACCOUNT_ID: z.string().trim().min(1).optional(),
+  INSTAGRAM_PAGE_ID: z.string().trim().min(1).optional(),
   INSTAGRAM_ACCESS_TOKEN: z.string().trim().min(1).optional(),
+  INSTAGRAM_APP_SECRET: z.string().trim().min(16).optional(),
+  INSTAGRAM_WEBHOOK_VERIFY_TOKEN: z.string().trim().min(8).optional(),
   INSTAGRAM_MIN_POSTS_DIA: inteiroComPadrao(1, 20, 5),
   INSTAGRAM_MAX_POSTS_DIA: inteiroComPadrao(1, 50, 12),
   INSTAGRAM_INTERVALO_MIN_MINUTOS: inteiroComPadrao(0, 1440, 30),

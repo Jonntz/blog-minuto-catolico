@@ -134,7 +134,9 @@
 	// Segredos (NUNCA em vars):
 	//   wrangler secret put CRON_SECRET
 	//   wrangler secret put NVIDIA_API_KEY         <- chave gratuita de build.nvidia.com
-	//   wrangler secret put INSTAGRAM_ACCOUNT_ID   <- ID da conta profissional IG (via Graph Explorer)
-	//   wrangler secret put INSTAGRAM_ACCESS_TOKEN <- System User Token permanente (Meta Business)
+	//   wrangler secret put INSTAGRAM_ACCOUNT_ID           <- ID da conta profissional IG (via Graph Explorer)
+	//   wrangler secret put INSTAGRAM_ACCESS_TOKEN         <- System User Token permanente (Meta Business)
+	//   wrangler secret put INSTAGRAM_APP_SECRET           <- Chave secreta do App Meta (valida webhook Direct)
+	//   wrangler secret put INSTAGRAM_WEBHOOK_VERIFY_TOKEN <- Token aleatório cadastrado no Webhook da Meta
 	// Em desenvolvimento, use .dev.vars (git-ignorado).
 }

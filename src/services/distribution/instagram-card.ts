@@ -425,7 +425,7 @@ export function montarLegendaInstagram(
 
   partes.push(
     `Fonte original: ${artigo.sourceName}`,
-    `Leia a matéria completa no link da bio (${dominio}/bio) ou acesse ${dominio}.`,
+    `Comente LER ou LINK para receber a matéria no Direct, ou acesse pelo link da bio (${dominio}/bio).`,
     montarHashtagsInstagram(artigo),
   );
 
@@ -527,20 +527,9 @@ export function montarUrlCardInstagram({
 }
 
 /**
- * Formata o endereço curto da matéria para exibição no card de Story (`9:16`),
- * garantindo leitura limpa dentro da caixa CTA mesmo em slugs longos.
- */
-export function formatarLinkVisualStory(siteUrl: string, slug: string): string {
-  const dominio = siteUrl.replace(/^https?:\/\//, "").replace(/\/+$/, "");
-  const caminho = `${dominio}/noticia/${slug}`;
-  if (caminho.length <= 46) return caminho;
-  return `${caminho.slice(0, 43)}…`;
-}
-
-/**
  * Constrói a URL dinâmica no Cloudinary que gera um Story `1080×1920` (9:16)
- * em JPEG baseline com zona segura para UI do Instagram, manchete e link
- * visível da matéria publicada (a Graph API bloqueia link stickers via código).
+ * em JPEG baseline com zona segura para UI do Instagram, manchete e chamada
+ * para recebimento do link clicável via Direct ("Responda LER") ou bio.
  */
 export function montarUrlStoryInstagram({
   cloudName,
@@ -564,8 +553,6 @@ export function montarUrlStoryInstagram({
   const tamanhoFonte =
     manchete.length <= 55 ? 54 : manchete.length <= 80 ? 48 : 44;
 
-  const linkVisual = formatarLinkVisualStory(siteUrl, artigo.slug);
-
   const urlFotoBase = artigo.imageUrl?.trim() || fallbackBgStoryUrl;
   const cropBase = artigo.imageUrl?.trim()
     ? "w_1080,h_1920,c_fill,g_auto"
@@ -574,7 +561,6 @@ export function montarUrlStoryInstagram({
   const camadaOverlay = `l_fetch:${toBase64Url(overlayStoryUrl)}/fl_layer_apply,w_1080,h_1920,g_center`;
   const camadaSelo = `bo_10px_solid_rgb:${cor},b_rgb:${cor},r_10,co_white,l_text:Montserrat@google_24_700_letter_spacing_2:${escaparTextoCloudinary(labelCategoria)}/fl_layer_apply,g_north_east,x_72,y_270`;
   const camadaManchete = `w_936,c_fit,co_white,l_text:Montserrat@google_${tamanhoFonte}_700_line_spacing_6:${escaparTextoCloudinary(manchete)}/fl_layer_apply,g_south_west,x_72,y_560`;
-  const camadaLink = `w_880,c_fit,co_white,l_text:Montserrat@google_24_600:${escaparTextoCloudinary(linkVisual)}/fl_layer_apply,g_north_west,x_100,y_1498`;
   const formatoSaida = "f_jpg,fl_progressive:none,q_88";
 
   const destinoRemoto = urlFotoBase
@@ -587,7 +573,6 @@ export function montarUrlStoryInstagram({
     camadaOverlay,
     camadaSelo,
     camadaManchete,
-    camadaLink,
     formatoSaida,
     destinoRemoto,
   ].join("/");

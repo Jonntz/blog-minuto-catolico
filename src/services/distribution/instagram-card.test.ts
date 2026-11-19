@@ -7,7 +7,6 @@ import {
 } from "./instagram";
 import {
   escaparTextoCloudinary,
-  formatarLinkVisualStory,
   higienizarTextoEditorial,
   montarHashtagsInstagram,
   montarLegendaInstagram,
@@ -111,6 +110,7 @@ describe("instagram-card — geração de card Cloudinary e legenda", () => {
     assert.ok(legenda.includes("Para os produtores, voltar ao encontro presencial"));
     assert.ok(!legenda.includes("Estados Unidos."));
     assert.ok(legenda.includes("Fonte original: EWTN News"));
+    assert.ok(legenda.includes("Comente LER ou LINK"));
     assert.ok(legenda.includes("minutocatolico.com.br/bio"));
     assert.ok(legenda.length <= 2_200);
   });
@@ -182,7 +182,7 @@ describe("instagram-card — geração de card Cloudinary e legenda", () => {
     }
   });
 
-  it("gera URL Cloudinary 1080x1920 JPEG baseline para Story com overlay e link visível", () => {
+  it("gera URL Cloudinary 1080x1920 JPEG baseline para Story com overlay Direct/Bio", () => {
     const url = montarUrlStoryInstagram({
       cloudName: "meu-cloud",
       siteUrl: "https://minutocatolico.com.br",
@@ -198,7 +198,8 @@ describe("instagram-card — geração de card Cloudinary e legenda", () => {
       ),
     );
     assert.ok(url.includes("g_north_east,x_72,y_270"));
-    assert.ok(url.includes("g_north_west,x_100,y_1498"));
+    assert.ok(url.includes("g_south_west,x_72,y_560"));
+    assert.ok(!url.includes("/noticia/"));
     assert.ok(url.includes("/f_jpg,fl_progressive:none,q_88/"));
     assert.ok(url.endsWith(ARTIGO_EXEMPLO.imageUrl!));
 
@@ -210,13 +211,6 @@ describe("instagram-card — geração de card Cloudinary e legenda", () => {
     assert.ok(
       urlFallback.endsWith("https://minutocatolico.com.br/social/bg-editorial-story.jpg"),
     );
-
-    const linkLongo = formatarLinkVisualStory(
-      "https://minutocatolico.com.br",
-      "conferencia-nacional-dos-bispos-divulga-documento-extenso-sobre-pastoral-familiar",
-    );
-    assert.ok(linkLongo.length <= 46);
-    assert.ok(linkLongo.endsWith("…"));
   });
 
   it("calcula início do dia em Brasília (UTC-3) e distingue bloqueio global da Meta", () => {
