@@ -106,25 +106,42 @@ export const MODELOS_NVIDIA = {
   /** MoE 550B/55B ativos. Reserva: mais lento (~4 s numa frase curta). */
   nemotronUltra: "nvidia/nemotron-3-ultra-550b-a55b",
   /**
-   * OpenAI open-weights, fora da família Nemotron — é o que mantém a
-   * verificação independente. Modelo de RACIOCÍNIO: o pensamento vem em
-   * `reasoning_content` (separado) mas conta no `max_tokens` — ver
-   * `OPCOES_VERIFICACAO`. Único não-Nemotron que respondia em 23/10/2026.
+   * Modelos de famílias não-Nemotron listados no catálogo NIM em 19/11/2026
+   * após a aposentadoria de `openai/gpt-oss-20b` (HTTP 410 em 18/11/2026).
+   * Preserva verificação independente (juiz != réu).
    */
-  gptOss20b: "openai/gpt-oss-20b",
+  mistralLarge4: "mistralai/mistral-large-4-1t-a52b",
+  glm53Flash: "z-ai/glm-5.3-flash",
+  minimaxM31Flash: "minimaxai/minimax-m3.1-flash",
+  gemma4_31b: "google/gemma-4-31b-it",
+  gemma3_12b: "google/gemma-3-12b-it",
 } as const satisfies Record<string, string>;
 
 /** Modelo da ADAPTAÇÃO — é onde a qualidade editorial se decide. */
 const MODELO_PADRAO: string = MODELOS_NVIDIA.nemotron35Super;
 
 /**
- * Modelo da VERIFICAÇÃO — de OUTRA FAMÍLIA de propósito.
+ * Modelo principal da VERIFICAÇÃO — de OUTRA FAMÍLIA de propósito.
  *
- * Não é economia, é independência: ver "JUIZ ≠ RÉU" no cabeçalho. Se um dia
- * este voltar a ser um Nemotron, o veredito passa a ser o autor se avaliando, e
- * o aviso de `VerificacaoFactual` volta a valer integralmente.
+ * Não é economia, é independência: ver "JUIZ ≠ RÉU" no cabeçalho. Em caso de
+ * aposentadoria (`404`/`410`) ou indisponibilidade transitória de rede/modelo,
+ * `verificarFatos` tenta automaticamente as reservas não-Nemotron abaixo.
  */
-const MODELO_VERIFICACAO_PADRAO: string = MODELOS_NVIDIA.gptOss20b;
+const MODELO_VERIFICACAO_PADRAO: string = MODELOS_NVIDIA.mistralLarge4;
+
+const RESERVAS_VERIFICACAO_NAO_NEMOTRON: readonly string[] = [
+  MODELOS_NVIDIA.mistralLarge4,
+  MODELOS_NVIDIA.glm53Flash,
+  MODELOS_NVIDIA.minimaxM31Flash,
+  MODELOS_NVIDIA.gemma4_31b,
+  MODELOS_NVIDIA.gemma3_12b,
+];
+
+/**
+ * Modelos de verificação que já devolveram `404`/`410` neste isolate. Evita
+ * repetir chamadas a modelos aposentados pela NVIDIA sem aviso prévio.
+ */
+const VERIFICADORES_INDISPONIVEIS = new Set<string>();
 
 /** Aceita apelido de `MODELOS_NVIDIA` ou identificador completo `vendor/modelo`. */
 function resolverModelo(bruto: string | undefined, padrao: string): string {
@@ -631,30 +648,69 @@ export function criarProviderNvidia(env: EnvNvidia): TranslationProvider {
     async verificarFatos(
       pedido: PedidoVerificacao,
     ): Promise<ResultadoProvider<VerificacaoFactual>> {
-      const bruto = await chamar(
-        chave,
+      const mensagens = montarMensagensVerificacao(pedido);
+      const candidatosBrutos = [
         modeloVerificacao,
-        montarMensagensVerificacao(pedido),
-        OPCOES_VERIFICACAO,
+        ...RESERVAS_VERIFICACAO_NAO_NEMOTRON,
+      ];
+      const candidatos = Array.from(new Set(candidatosBrutos)).filter(
+        (modelo) => !VERIFICADORES_INDISPONIVEIS.has(modelo),
       );
-      if (!bruto.ok) return { ok: false, erro: bruto.erro };
+      const lista = candidatos.length > 0 ? candidatos : [modeloVerificacao];
 
-      const veredito = parsearVerificacao(bruto.valor.texto);
-      if (veredito === null) {
-        // Sem veredito legível não há como certificar o texto. Isto vira
-        // reprovação lá em `adapt.ts` — nunca aprovação por omissão.
-        return {
-          ok: false,
-          erro: {
+      let ultimoErro: ErroProvider = {
+        tipo: "indisponivel",
+        mensagem: "Nenhum modelo verificador disponível na NVIDIA NIM.",
+      };
+
+      for (const [indice, modelo] of lista.entries()) {
+        const opcoes =
+          lista.length > 1 && indice === 0
+            ? { ...OPCOES_VERIFICACAO, timeoutMs: Math.min(OPCOES_VERIFICACAO.timeoutMs, 60_000) }
+            : lista.length > 1
+              ? { ...OPCOES_VERIFICACAO, timeoutMs: 45_000 }
+              : OPCOES_VERIFICACAO;
+
+        const bruto = await chamar(chave, modelo, mensagens, opcoes);
+        if (!bruto.ok) {
+          ultimoErro = bruto.erro;
+          // Chave inválida/revogada não se resolve trocando de modelo.
+          if (bruto.erro.tipo === "desativado") {
+            if (/^HTTP (404|410)\b/.test(bruto.erro.mensagem)) {
+              VERIFICADORES_INDISPONIVEIS.add(modelo);
+              continue;
+            }
+            return { ok: false, erro: bruto.erro };
+          }
+          // Erro de rede/5xx/quota de um modelo específico: tenta a próxima
+          // família não-Nemotron para manter o portal publicando.
+          if (
+            bruto.erro.tipo === "rede" ||
+            bruto.erro.tipo === "indisponivel" ||
+            bruto.erro.tipo === "quota"
+          ) {
+            continue;
+          }
+          return { ok: false, erro: bruto.erro };
+        }
+
+        const veredito = parsearVerificacao(bruto.valor.texto);
+        if (veredito === null) {
+          ultimoErro = {
             tipo: "resposta_invalida",
             mensagem:
-              "Verificação factual: resposta não continha VEREDITO legível " +
+              `Verificação factual (${modelo}): resposta não continha VEREDITO legível ` +
               `(finish_reason=${bruto.valor.finishReason}). Trecho: ` +
               JSON.stringify(bruto.valor.texto.slice(0, 180)),
-          },
-        };
+          };
+          continue;
+        }
+        return { ok: true, valor: veredito, uso: bruto.valor.uso };
       }
-      return { ok: true, valor: veredito, uso: bruto.valor.uso };
+
+      // Sem veredito legível em nenhuma reserva não há como certificar o texto.
+      // Isto vira reprovação/adiamento lá em `adapt.ts` — nunca aprovação por omissão.
+      return { ok: false, erro: ultimoErro };
     },
   };
 }

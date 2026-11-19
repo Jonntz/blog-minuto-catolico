@@ -100,8 +100,9 @@ export const esquemaEnv = z.object({
    */
   INSTAGRAM_ACCOUNT_ID: z.string().trim().min(1).optional(),
   INSTAGRAM_ACCESS_TOKEN: z.string().trim().min(1).optional(),
-  INSTAGRAM_MAX_POSTS_DIA: inteiroComPadrao(1, 50, 5),
-  INSTAGRAM_INTERVALO_MIN_MINUTOS: inteiroComPadrao(5, 1440, 180),
+  INSTAGRAM_MIN_POSTS_DIA: inteiroComPadrao(1, 20, 5),
+  INSTAGRAM_MAX_POSTS_DIA: inteiroComPadrao(1, 50, 12),
+  INSTAGRAM_INTERVALO_MIN_MINUTOS: inteiroComPadrao(0, 1440, 30),
   CLOUDINARY_CLOUD_NAME: z.string().trim().min(1).optional(),
 });
 

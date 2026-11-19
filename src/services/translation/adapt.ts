@@ -176,6 +176,7 @@ export interface ItemPublicado {
   categorySlug: string;
   title: string;
   dek: string;
+  publishedAt: number;
 }
 
 export interface ResumoAdaptacao {
@@ -276,6 +277,7 @@ export interface LinhaPendente {
   sourceExcerpt: string | null;
   sourceLength: number;
   categorySlug: string;
+  publishedAt: number;
   validationErrors?: string[] | null;
 }
 
@@ -444,6 +446,7 @@ export async function adaptarPendentes(
       sourceExcerpt: articles.sourceExcerpt,
       sourceLength: articles.sourceLength,
       categorySlug: articles.categorySlug,
+      publishedAt: articles.publishedAt,
       validationErrors: articles.validationErrors,
     })
     .from(articles)
@@ -786,6 +789,7 @@ async function processarItem(
       categorySlug: categoriaFinal,
       title: adaptacao.valor.titulo,
       dek: adaptacao.valor.dek,
+      publishedAt: linha.publishedAt,
     },
   };
 }

@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { exigirCronSecret } from "@/lib/cron-auth";
 import { getDb, getEnv } from "@/db";
 import { ingestionRuns } from "@/db/schema";
+import { getValidatedEnv } from "@/lib/env";
 import { invalidarAposPublicar } from "@/lib/revalidate";
+import { publicarPublicadosNoInstagram } from "@/services/distribution/instagram";
 import { notificarPublicacao, type EnvDistribuicao } from "@/services/distribution/notify";
 import { adaptarPendentes, paraIngestionRun } from "@/services/translation";
 import { requeueTransitorios } from "@/services/translation/requeue";
@@ -70,12 +72,24 @@ export async function POST(request: Request): Promise<NextResponse> {
     // Usa exatamente a lista retornada por `adaptarPendentes` (antes fazia um
     // SELECT sem ORDER BY que invalidava sempre os artigos mais antigos).
     let distribuicao = null;
+    let instagram = null;
     if (resumo.itensPublicados.length > 0) {
       invalidarAposPublicar(resumo.itensPublicados);
-      distribuicao = await notificarPublicacao(
-        resumo.itensPublicados,
-        env as unknown as EnvDistribuicao,
-      );
+      const envValidado = await getValidatedEnv();
+      const [dist, ig] = await Promise.all([
+        notificarPublicacao(
+          resumo.itensPublicados,
+          env as unknown as EnvDistribuicao,
+        ),
+        publicarPublicadosNoInstagram(db, envValidado, resumo.itensPublicados).catch(
+          (erro) => ({
+            status: "erro_interno" as const,
+            erro: erro instanceof Error ? erro.message : String(erro),
+          }),
+        ),
+      ]);
+      distribuicao = dist;
+      instagram = ig;
     }
 
     return NextResponse.json({
@@ -83,6 +97,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       runId,
       requeue,
       distribuicao,
+      instagram,
       ...resumo,
     });
   } catch (erro) {

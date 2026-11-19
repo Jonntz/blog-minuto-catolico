@@ -2,10 +2,17 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { esquemaEnv } from "@/lib/env";
 import {
+  ehErroGlobalMeta,
+  inicioDoDiaBrtSeg,
+} from "./instagram";
+import {
   escaparTextoCloudinary,
+  formatarLinkVisualStory,
   higienizarTextoEditorial,
+  montarHashtagsInstagram,
   montarLegendaInstagram,
   montarUrlCardInstagram,
+  montarUrlStoryInstagram,
   toBase64Url,
   truncarMancheteCard,
   validarTextosParaInstagram,
@@ -133,18 +140,101 @@ describe("instagram-card — geração de card Cloudinary e legenda", () => {
     };
     const padrao = esquemaEnv.parse(base);
     assert.equal(padrao.SITE_URL, "https://minutocatolico.com.br");
-    assert.equal(padrao.INSTAGRAM_MAX_POSTS_DIA, 5);
-    assert.equal(padrao.INSTAGRAM_INTERVALO_MIN_MINUTOS, 180);
+    assert.equal(padrao.INSTAGRAM_MIN_POSTS_DIA, 5);
+    assert.equal(padrao.INSTAGRAM_MAX_POSTS_DIA, 12);
+    assert.equal(padrao.INSTAGRAM_INTERVALO_MIN_MINUTOS, 30);
     assert.equal(padrao.INSTAGRAM_ACCESS_TOKEN, undefined);
 
     const custom = esquemaEnv.parse({
       ...base,
-      INSTAGRAM_MAX_POSTS_DIA: "8",
-      INSTAGRAM_INTERVALO_MIN_MINUTOS: "60",
+      INSTAGRAM_MIN_POSTS_DIA: "6",
+      INSTAGRAM_MAX_POSTS_DIA: "15",
+      INSTAGRAM_INTERVALO_MIN_MINUTOS: "0",
       CLOUDINARY_CLOUD_NAME: "minuto-cloud",
     });
-    assert.equal(custom.INSTAGRAM_MAX_POSTS_DIA, 8);
-    assert.equal(custom.INSTAGRAM_INTERVALO_MIN_MINUTOS, 60);
+    assert.equal(custom.INSTAGRAM_MIN_POSTS_DIA, 6);
+    assert.equal(custom.INSTAGRAM_MAX_POSTS_DIA, 15);
+    assert.equal(custom.INSTAGRAM_INTERVALO_MIN_MINUTOS, 0);
     assert.equal(custom.CLOUDINARY_CLOUD_NAME, "minuto-cloud");
+  });
+
+  it("gera hashtags virais católicas em português com detecção contextual sem duplicatas", () => {
+    const tags = montarHashtagsInstagram({
+      categorySlug: "vaticano",
+      title: "Papa Leão XIV celebra Santa Missa pela Eucaristia e reza o Rosário a Nossa Senhora",
+      sourceTitle: "Pope celebrates Mass",
+      dek: "Em Roma, o Santo Padre falou aos bispos sobre vocação e oração.",
+    });
+
+    const lista = tags.split(" ");
+    assert.ok(lista.length >= 10 && lista.length <= 14, `qtd=${lista.length}`);
+    assert.equal(new Set(lista.map((t) => t.toLowerCase())).size, lista.length);
+    for (const esperada of [
+      "#MinutoCatolico",
+      "#IgrejaCatolica",
+      "#Catolicos",
+      "#Catolicismo",
+      "#FeCatolica",
+      "#Vaticano",
+      "#PapaLeaoXIV",
+    ]) {
+      assert.ok(lista.includes(esperada), `faltou ${esperada} em ${tags}`);
+    }
+  });
+
+  it("gera URL Cloudinary 1080x1920 JPEG baseline para Story com overlay e link visível", () => {
+    const url = montarUrlStoryInstagram({
+      cloudName: "meu-cloud",
+      siteUrl: "https://minutocatolico.com.br",
+      artigo: ARTIGO_EXEMPLO,
+    });
+
+    assert.ok(
+      url.startsWith("https://res.cloudinary.com/meu-cloud/image/fetch/w_1080,h_1920,c_fill,g_auto/"),
+    );
+    assert.ok(
+      url.includes(
+        `l_fetch:${toBase64Url("https://minutocatolico.com.br/social/overlay-story.png")}/`,
+      ),
+    );
+    assert.ok(url.includes("g_north_east,x_72,y_270"));
+    assert.ok(url.includes("g_north_west,x_100,y_1498"));
+    assert.ok(url.includes("/f_jpg,fl_progressive:none,q_88/"));
+    assert.ok(url.endsWith(ARTIGO_EXEMPLO.imageUrl!));
+
+    const urlFallback = montarUrlStoryInstagram({
+      cloudName: "meu-cloud",
+      siteUrl: "https://minutocatolico.com.br",
+      artigo: { ...ARTIGO_EXEMPLO, imageUrl: null },
+    });
+    assert.ok(
+      urlFallback.endsWith("https://minutocatolico.com.br/social/bg-editorial-story.jpg"),
+    );
+
+    const linkLongo = formatarLinkVisualStory(
+      "https://minutocatolico.com.br",
+      "conferencia-nacional-dos-bispos-divulga-documento-extenso-sobre-pastoral-familiar",
+    );
+    assert.ok(linkLongo.length <= 46);
+    assert.ok(linkLongo.endsWith("…"));
+  });
+
+  it("calcula início do dia em Brasília (UTC-3) e distingue bloqueio global da Meta", () => {
+    // 2026-11-19 02:30:00 UTC = 2026-11-18 23:30:00 BRT -> início do dia 18/11 BRT = 2026-11-18 03:00:00 UTC
+    const antesMeiaNoiteBrt = Math.floor(Date.parse("2026-11-19T02:30:00Z") / 1000);
+    const esperadoDia18 = Math.floor(Date.parse("2026-11-18T03:00:00Z") / 1000);
+    assert.equal(inicioDoDiaBrtSeg(antesMeiaNoiteBrt), esperadoDia18);
+
+    // 2026-11-19 03:05:00 UTC = 2026-11-19 00:05:00 BRT -> início do dia 19/11 BRT = 2026-11-19 03:00:00 UTC
+    const depoisMeiaNoiteBrt = Math.floor(Date.parse("2026-11-19T03:05:00Z") / 1000);
+    const esperadoDia19 = Math.floor(Date.parse("2026-11-19T03:00:00Z") / 1000);
+    assert.equal(inicioDoDiaBrtSeg(depoisMeiaNoiteBrt), esperadoDia19);
+
+    assert.equal(ehErroGlobalMeta({ statusHttp: 400, code: 200, subcode: 5258005 }), true);
+    assert.equal(ehErroGlobalMeta({ statusHttp: 401, code: 190 }), true);
+    assert.equal(ehErroGlobalMeta({ statusHttp: 429, code: 4 }), true);
+    assert.equal(ehErroGlobalMeta({ statusHttp: 503 }), true);
+    assert.equal(ehErroGlobalMeta({}), true);
+    assert.equal(ehErroGlobalMeta({ statusHttp: 400, code: 9004 }), false);
   });
 });

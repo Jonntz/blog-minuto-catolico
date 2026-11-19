@@ -117,7 +117,7 @@
 		// Bônus: o limite gratuito (~40 req/min) é POR MODELO, então dois
 		// modelos distintos também dobram a vazão.
 		"NVIDIA_MODEL": "nemotron35Super",
-		"NVIDIA_VERIFY_MODEL": "gptOss20b",
+		"NVIDIA_VERIFY_MODEL": "mistralLarge4",
 		// Modelos do Workers AI — só entram em uso com TRANSLATION_PROVIDER=workersAi.
 		// Apelido de MODELOS_AVALIADOS ou id completo "@cf/...".
 		"WORKERS_AI_MODEL": "llama70b",
@@ -126,8 +126,9 @@
 		"INDEXNOW_KEY": "686b94694ba9d30238795853022e7eed",
 		// Controle anti-spam da automação do Instagram (Caminho 1 + Opção A).
 		// Preencher CLOUDINARY_CLOUD_NAME aqui após criar a conta gratuita no Cloudinary.
-		"INSTAGRAM_MAX_POSTS_DIA": "5",
-		"INSTAGRAM_INTERVALO_MIN_MINUTOS": "180",
+		"INSTAGRAM_MIN_POSTS_DIA": "5",
+		"INSTAGRAM_MAX_POSTS_DIA": "12",
+		"INSTAGRAM_INTERVALO_MIN_MINUTOS": "30",
 		"CLOUDINARY_CLOUD_NAME": "dxbbp6yw"
 	}
 	// Segredos (NUNCA em vars):

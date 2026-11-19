@@ -268,7 +268,7 @@ export type NovoSubscriber = typeof subscribers.$inferInsert;
 // social_posts — distribuição automática em redes sociais (Instagram, etc.)
 // ---------------------------------------------------------------------------
 
-export const REDES_SOCIAIS_AUTO = ["instagram"] as const;
+export const REDES_SOCIAIS_AUTO = ["instagram", "instagram_story"] as const;
 export type RedeSocialAuto = (typeof REDES_SOCIAIS_AUTO)[number];
 
 export const STATUS_SOCIAL = [

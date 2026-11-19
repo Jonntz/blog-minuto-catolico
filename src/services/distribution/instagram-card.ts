@@ -30,24 +30,165 @@ const COR_POR_TOM: Record<Tom, string> = {
   neut: "3f3f46",
 };
 
-const HASHTAGS_POR_CATEGORIA: Record<string, string> = {
-  vaticano:
-    "#MinutoCatolico #Vaticano #IgrejaCatolica #Papa #NoticiasCatolicas #fe #catolicismo",
-  liturgia:
-    "#MinutoCatolico #Liturgia #MissaTradicional #TradicaoCatolica #IgrejaCatolica #fsspx #criseNaIgreja #VaticanoSegundo",
-  santos: "#MinutoCatolico #Santos #VidaDosSantos #FeCatolica #IgrejaCatolica",
-  opiniao:
-    "#MinutoCatolico #FeCatolica #IgrejaCatolica #FormacaoCatolica #fsspx #criseNaIgreja #VaticanoSegundo",
-  patrimonio:
-    "#MinutoCatolico #PatrimonioCatolico #ArteSacra #IgrejaCatolica #fe",
-  caridade: "#MinutoCatolico #Caridade #DoutrinaSocial #IgrejaCatolica",
-  juventude: "#MinutoCatolico #JuventudeCatolica #FeCatolica #IgrejaCatolica",
-  missoes: "#MinutoCatolico #Missoes #Evangelizacao #IgrejaCatolica",
-  doutrina: "#MinutoCatolico #DoutrinaCatolica #Catecismo #FormacaoCatolica",
-  brasil: "#MinutoCatolico #IgrejaNoBrasil #CatolicosBrasil #IgrejaCatolica",
-  mundo:
-    "#MinutoCatolico #IgrejaNoMundo #NoticiasCatolicas #IgrejaCatolica #fsspx #criseNaIgreja #VaticanoSegundo",
+const HASHTAGS_BASE_VIRAIS = [
+  "#MinutoCatolico",
+  "#IgrejaCatolica",
+  "#Catolicos",
+  "#Catolicismo",
+  "#FeCatolica",
+  "#NoticiasCatolicas",
+] as const;
+
+const HASHTAGS_POR_CATEGORIA: Record<string, readonly string[]> = {
+  vaticano: [
+    "#Vaticano",
+    "#SantaSe",
+    "#Roma",
+    "#Papa",
+    "#Magisterio",
+    "#PapaLeaoXIV",
+  ],
+  liturgia: [
+    "#Liturgia",
+    "#SantaMissa",
+    "#Eucaristia",
+    "#TradicaoCatolica",
+    "#MissaTradicional",
+    "#fsspx",
+  ],
+  santos: [
+    "#SantoDoDia",
+    "#SantosCatolicos",
+    "#VidaDosSantos",
+    "#Santidade",
+    "#Oracao",
+  ],
+  opiniao: [
+    "#FormacaoCatolica",
+    "#Apologetica",
+    "#DoutrinaCatolica",
+    "#criseNaIgreja",
+    "#VaticanoSegundo",
+  ],
+  patrimonio: [
+    "#ArteSacra",
+    "#PatrimonioCatolico",
+    "#HistoriaDaIgreja",
+    "#CulturaCatolica",
+  ],
+  caridade: [
+    "#Caridade",
+    "#DoutrinaSocial",
+    "#Misericordia",
+    "#AmorAoProximo",
+  ],
+  juventude: [
+    "#JuventudeCatolica",
+    "#JovensCatolicos",
+    "#Vocacao",
+    "#SerCatolico",
+  ],
+  missoes: [
+    "#Evangelizacao",
+    "#Missoes",
+    "#MissaoCatolica",
+    "#AnuncioDoEvangelho",
+  ],
+  doutrina: [
+    "#DoutrinaCatolica",
+    "#Catecismo",
+    "#TeologiaCatolica",
+    "#FormacaoCatolica",
+    "#VerdadeCatolica",
+  ],
+  brasil: [
+    "#IgrejaNoBrasil",
+    "#CatolicosBrasil",
+    "#CatolicosDoBrasil",
+    "#BrasilCatolico",
+    "#NossaSenhoraAparecida",
+  ],
+  mundo: [
+    "#IgrejaNoMundo",
+    "#CristaosNoMundo",
+    "#LiberdadeReligiosa",
+    "#CatolicosDoBrasil",
+  ],
 };
+
+const REGRAS_HASHTAGS_CONTEXTO: ReadonlyArray<{
+  padrao: RegExp;
+  tags: readonly string[];
+}> = [
+  {
+    padrao: /\bpap[ao]\b|le[aã]o\s*xiv|leo\s*xiv|pont[ií]fice|santo padre/i,
+    tags: ["#PapaLeaoXIV", "#Vaticano"],
+  },
+  {
+    padrao: /eucarist|missa|altar|sacrament|sant[ií]ssimo/i,
+    tags: ["#Eucaristia", "#SantaMissa"],
+  },
+  {
+    padrao:
+      /virgem maria|nossa senhora|mariano|aparecida|f[aá]tima|lourdes|ros[aá]rio/i,
+    tags: ["#NossaSenhora", "#VirgemMaria"],
+  },
+  {
+    padrao: /ora[cç][aã]o|ter[cç]o|jejum|quaresma|advento|p[aá]scoa|natal/i,
+    tags: ["#Oracao", "#VidaDeOracao"],
+  },
+  {
+    padrao: /tridentin|traditionis|lefebvre|fsspx|missa antiga|latim/i,
+    tags: ["#TradicaoCatolica", "#MissaTradicional", "#fsspx"],
+  },
+  {
+    padrao: /ab[oó]rto|pr[oó]-vida|fam[ií]lia|casamento|matrim[oô]nio|m[aã]e/i,
+    tags: ["#FamiliaCatolica", "#ProVida"],
+  },
+  {
+    padrao: /bispo|cardeal|diocese|arquidiocese|cnbb|seminarista|sacerdote|padre/i,
+    tags: ["#Clero", "#OracaoPelosPadres"],
+  },
+];
+
+const MAX_HASHTAGS_POST = 14;
+
+/**
+ * Monta um bloco de hashtags católicas em português de alto alcance combinando
+ * identidade do portal, editoria e contexto temático da manchete/resumo.
+ */
+export function montarHashtagsInstagram(
+  artigo: Pick<
+    ArtigoInstagram,
+    "categorySlug" | "title" | "sourceTitle" | "dek"
+  >,
+): string {
+  const resultado: string[] = [];
+  const vistas = new Set<string>();
+
+  const adicionar = (tag: string) => {
+    if (resultado.length >= MAX_HASHTAGS_POST) return;
+    const chave = tag.toLowerCase();
+    if (vistas.has(chave)) return;
+    vistas.add(chave);
+    resultado.push(tag);
+  };
+
+  for (const tag of HASHTAGS_BASE_VIRAIS) adicionar(tag);
+
+  const daCategoria =
+    HASHTAGS_POR_CATEGORIA[artigo.categorySlug] ?? HASHTAGS_POR_CATEGORIA.mundo;
+  for (const tag of daCategoria) adicionar(tag);
+
+  const textoAnalise = `${artigo.title ?? artigo.sourceTitle} ${artigo.dek ?? ""}`;
+  for (const regra of REGRAS_HASHTAGS_CONTEXTO) {
+    if (regra.padrao.test(textoAnalise)) {
+      for (const tag of regra.tags) adicionar(tag);
+    }
+  }
+
+  return resultado.join(" ");
+}
 
 const MAX_CARACTERES_LEGENDA = 2_200;
 const MAX_CARACTERES_MANCHETE_CARD = 98;
@@ -285,7 +426,7 @@ export function montarLegendaInstagram(
   partes.push(
     `Fonte original: ${artigo.sourceName}`,
     `Leia a matéria completa no link da bio (${dominio}/bio) ou acesse ${dominio}.`,
-    HASHTAGS_POR_CATEGORIA[artigo.categorySlug] ?? HASHTAGS_POR_CATEGORIA.mundo,
+    montarHashtagsInstagram(artigo),
   );
 
   const legenda = partes.join("\n\n");
@@ -380,6 +521,73 @@ export function montarUrlCardInstagram({
     camadaOverlay,
     camadaSelo,
     camadaManchete,
+    formatoSaida,
+    destinoRemoto,
+  ].join("/");
+}
+
+/**
+ * Formata o endereço curto da matéria para exibição no card de Story (`9:16`),
+ * garantindo leitura limpa dentro da caixa CTA mesmo em slugs longos.
+ */
+export function formatarLinkVisualStory(siteUrl: string, slug: string): string {
+  const dominio = siteUrl.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  const caminho = `${dominio}/noticia/${slug}`;
+  if (caminho.length <= 46) return caminho;
+  return `${caminho.slice(0, 43)}…`;
+}
+
+/**
+ * Constrói a URL dinâmica no Cloudinary que gera um Story `1080×1920` (9:16)
+ * em JPEG baseline com zona segura para UI do Instagram, manchete e link
+ * visível da matéria publicada (a Graph API bloqueia link stickers via código).
+ */
+export function montarUrlStoryInstagram({
+  cloudName,
+  siteUrl,
+  artigo,
+}: {
+  cloudName: string;
+  siteUrl: string;
+  artigo: ArtigoInstagram;
+}): string {
+  const baseAssets = siteUrl.replace(/\/+$/, "");
+  const overlayStoryUrl = `${baseAssets}/social/overlay-story.png`;
+  const fallbackBgStoryUrl = `${baseAssets}/social/bg-editorial-story.jpg`;
+
+  const categoria = getCategoriaOuPadrao(artigo.categorySlug);
+  const cor = COR_POR_TOM[categoria.tom];
+  const labelCategoria = `${PADDING_SELO}${categoria.label.toUpperCase()}${PADDING_SELO}`;
+
+  const tituloBruto = artigo.title ?? artigo.sourceTitle;
+  const manchete = truncarMancheteCard(tituloBruto, MAX_CARACTERES_MANCHETE_CARD);
+  const tamanhoFonte =
+    manchete.length <= 55 ? 54 : manchete.length <= 80 ? 48 : 44;
+
+  const linkVisual = formatarLinkVisualStory(siteUrl, artigo.slug);
+
+  const urlFotoBase = artigo.imageUrl?.trim() || fallbackBgStoryUrl;
+  const cropBase = artigo.imageUrl?.trim()
+    ? "w_1080,h_1920,c_fill,g_auto"
+    : "w_1080,h_1920,c_fill";
+
+  const camadaOverlay = `l_fetch:${toBase64Url(overlayStoryUrl)}/fl_layer_apply,w_1080,h_1920,g_center`;
+  const camadaSelo = `bo_10px_solid_rgb:${cor},b_rgb:${cor},r_10,co_white,l_text:Montserrat@google_24_700_letter_spacing_2:${escaparTextoCloudinary(labelCategoria)}/fl_layer_apply,g_north_east,x_72,y_270`;
+  const camadaManchete = `w_936,c_fit,co_white,l_text:Montserrat@google_${tamanhoFonte}_700_line_spacing_6:${escaparTextoCloudinary(manchete)}/fl_layer_apply,g_south_west,x_72,y_560`;
+  const camadaLink = `w_880,c_fit,co_white,l_text:Montserrat@google_24_600:${escaparTextoCloudinary(linkVisual)}/fl_layer_apply,g_north_west,x_100,y_1498`;
+  const formatoSaida = "f_jpg,fl_progressive:none,q_88";
+
+  const destinoRemoto = urlFotoBase
+    .replace(/\?/g, "%3F")
+    .replace(/#/g, "%23");
+
+  return [
+    `https://res.cloudinary.com/${encodeURIComponent(cloudName)}/image/fetch`,
+    cropBase,
+    camadaOverlay,
+    camadaSelo,
+    camadaManchete,
+    camadaLink,
     formatoSaida,
     destinoRemoto,
   ].join("/");
